@@ -10,15 +10,16 @@ class RemoteVideoRegistry {
     private var holders: [Int: StreamHolder] = [:]
 
     func start(stream: RemoteVideoStream) throws -> UIView {
-        if let existing = holders[stream.id] {
+        let streamId = Int(stream.id)
+        if let existing = holders[streamId] {
             return existing.view
         }
 
-        let renderer = try VideoStreamRenderer(stream: stream)
+        let renderer = try VideoStreamRenderer(remoteVideoStream: stream)
         let view = try renderer.createView()
         view.translatesAutoresizingMaskIntoConstraints = false
 
-        holders[stream.id] = StreamHolder(renderer: renderer, view: view)
+        holders[streamId] = StreamHolder(renderer: renderer, view: view)
         return view
     }
 

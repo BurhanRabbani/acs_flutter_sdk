@@ -1,3 +1,10 @@
+## 0.1.2
+
+* Add `joinTeamsMeeting` APIs on Dart, Android, and iOS bridges
+* Wire the example app with manual group call / Teams meeting join flows
+* Document initialization requirements and Teams meeting limitations
+* Extend unit tests to cover the new meeting-link workflow
+
 ## 0.1.1
 
 * Fix platform channel payload mismatches for calling and chat responses

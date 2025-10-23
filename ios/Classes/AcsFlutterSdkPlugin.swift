@@ -61,6 +61,12 @@ public class AcsFlutterSdkPlugin: NSObject, FlutterPlugin, CallDelegate, RemoteP
             stopVideo(result: result)
         case "switchCamera":
             switchCamera(result: result)
+        case "joinTeamsMeeting":
+            joinTeamsMeeting(args: args, result: result)
+        case "addParticipants":
+            addParticipants(args: args, result: result)
+        case "removeParticipants":
+            removeParticipants(args: args, result: result)
 
         case "createUser", "getToken", "revokeToken":
             result(FlutterError(
@@ -112,7 +118,7 @@ public class AcsFlutterSdkPlugin: NSObject, FlutterPlugin, CallDelegate, RemoteP
             return
         }
 
-        callClient.createCallAgent(userCredential: tokenCredential!) { [weak self] agent, error in
+        callClient.createCallAgent(userCredential: tokenCredential!, completionHandler: { [weak self] agent, error in
             guard let self = self else { return }
             if let error = error {
                 result(FlutterError(code: "INITIALIZATION_ERROR", message: error.localizedDescription, details: nil))
@@ -121,13 +127,13 @@ public class AcsFlutterSdkPlugin: NSObject, FlutterPlugin, CallDelegate, RemoteP
 
             self.callAgent = agent
             self.callAgent?.delegate = self
-            do {
-                self.deviceManager = try self.callClient.getDeviceManager()
-            } catch {
-                // Device manager is optional; ignore failures and continue.
-            }
-            result(["status": "initialized"])
-        }
+            self.callClient.getDeviceManager(completionHandler: { manager, _ in
+                if let manager = manager {
+                    self.deviceManager = manager
+                }
+                result(["status": "initialized"])
+            })
+        })
     }
 
     private func requestPermissions(result: @escaping FlutterResult) {
@@ -164,25 +170,52 @@ public class AcsFlutterSdkPlugin: NSObject, FlutterPlugin, CallDelegate, RemoteP
 
         let withVideo = args["withVideo"] as? Bool ?? false
 
-        DispatchQueue.main.async {
-            do {
-                let options = StartCallOptions()
-                if withVideo, let stream = try self.ensureLocalVideoStream() {
-                    options.videoOptions = VideoOptions(localVideoStreams: [stream])
-                    try self.viewManager.showLocalPreview(stream: stream)
-                }
+        let callees = participants.map { CommunicationUserIdentifier($0) }
 
-                let callees = participants.map { CommunicationUserIdentifier($0) }
-                guard let newCall = agent.startCall(participants: callees, options: options) else {
-                    result(FlutterError(code: "CALL_START_FAILED", message: "Failed to start call", details: nil))
+        let beginCall: (LocalVideoStream?) -> Void = { stream in
+            let options = StartCallOptions()
+            if let stream = stream {
+                options.videoOptions = VideoOptions(localVideoStreams: [stream])
+            }
+
+            agent.startCall(participants: callees, options: options, completionHandler: { call, error in
+                DispatchQueue.main.async {
+                    if let error = error {
+                        result(FlutterError(code: "CALL_START_FAILED", message: error.localizedDescription, details: nil))
+                        return
+                    }
+                    guard let call = call else {
+                        result(FlutterError(code: "CALL_START_FAILED", message: "Failed to start call", details: nil))
+                        return
+                    }
+                    self.attachCall(call)
+                    result(["id": call.id, "state": self.callStateToString(call.state)])
+                }
+            })
+        }
+
+        if withVideo {
+            ensureLocalVideoStream { stream, error in
+                if let error = error {
+                    result(FlutterError(code: "VIDEO_UNAVAILABLE", message: error.localizedDescription, details: nil))
                     return
                 }
-
-                self.attachCall(newCall)
-                result(["id": newCall.id, "state": self.callStateToString(newCall.state)])
-            } catch {
-                result(FlutterError(code: "CALL_START_FAILED", message: error.localizedDescription, details: nil))
+                guard let stream = stream else {
+                    result(FlutterError(code: "VIDEO_UNAVAILABLE", message: "Unable to access camera", details: nil))
+                    return
+                }
+                DispatchQueue.main.async {
+                    do {
+                        try self.viewManager.showLocalPreview(stream: stream)
+                    } catch {
+                        result(FlutterError(code: "VIDEO_START_FAILED", message: error.localizedDescription, details: nil))
+                        return
+                    }
+                    beginCall(stream)
+                }
             }
+        } else {
+            beginCall(nil)
         }
     }
 
@@ -199,25 +232,112 @@ public class AcsFlutterSdkPlugin: NSObject, FlutterPlugin, CallDelegate, RemoteP
 
         let withVideo = args["withVideo"] as? Bool ?? false
 
-        DispatchQueue.main.async {
-            do {
-                let locator = GroupCallLocator(groupId: uuid)
-                let options = JoinCallOptions()
-                if withVideo, let stream = try self.ensureLocalVideoStream() {
-                    options.videoOptions = VideoOptions(localVideoStreams: [stream])
-                    try self.viewManager.showLocalPreview(stream: stream)
-                }
+        let locator = GroupCallLocator(groupId: uuid)
 
-                guard let joinedCall = agent.join(with: locator, options: options) else {
-                    result(FlutterError(code: "CALL_JOIN_FAILED", message: "Failed to join call", details: nil))
+        let beginJoin: (LocalVideoStream?) -> Void = { stream in
+            let options = JoinCallOptions()
+            if let stream = stream {
+                options.videoOptions = VideoOptions(localVideoStreams: [stream])
+            }
+
+            agent.join(with: locator, joinCallOptions: options, completionHandler: { call, error in
+                DispatchQueue.main.async {
+                    if let error = error {
+                        result(FlutterError(code: "CALL_JOIN_FAILED", message: error.localizedDescription, details: nil))
+                        return
+                    }
+                    guard let call = call else {
+                        result(FlutterError(code: "CALL_JOIN_FAILED", message: "Failed to join call", details: nil))
+                        return
+                    }
+                    self.attachCall(call)
+                    result(["id": call.id, "state": self.callStateToString(call.state)])
+                }
+            })
+        }
+
+        if withVideo {
+            ensureLocalVideoStream { stream, error in
+                if let error = error {
+                    result(FlutterError(code: "VIDEO_UNAVAILABLE", message: error.localizedDescription, details: nil))
                     return
                 }
-
-                self.attachCall(joinedCall)
-                result(["id": joinedCall.id, "state": self.callStateToString(joinedCall.state)])
-            } catch {
-                result(FlutterError(code: "CALL_JOIN_FAILED", message: error.localizedDescription, details: nil))
+                guard let stream = stream else {
+                    result(FlutterError(code: "VIDEO_UNAVAILABLE", message: "Unable to access camera", details: nil))
+                    return
+                }
+                DispatchQueue.main.async {
+                    do {
+                        try self.viewManager.showLocalPreview(stream: stream)
+                    } catch {
+                        result(FlutterError(code: "VIDEO_START_FAILED", message: error.localizedDescription, details: nil))
+                        return
+                    }
+                    beginJoin(stream)
+                }
             }
+        } else {
+            beginJoin(nil)
+        }
+    }
+
+    private func joinTeamsMeeting(args: [String: Any], result: @escaping FlutterResult) {
+        guard let meetingLink = args["meetingLink"] as? String, !meetingLink.isEmpty else {
+            result(FlutterError(code: "INVALID_ARGUMENT", message: "Valid Teams meeting link is required", details: nil))
+            return
+        }
+        guard let agent = callAgent else {
+            result(FlutterError(code: "NOT_INITIALIZED", message: "Call agent not initialized", details: nil))
+            return
+        }
+
+        let withVideo = args["withVideo"] as? Bool ?? false
+        let locator = TeamsMeetingLinkLocator(meetingLink: meetingLink)
+
+        let beginJoin: (LocalVideoStream?) -> Void = { stream in
+            let options = JoinCallOptions()
+            if let stream = stream {
+                options.videoOptions = VideoOptions(localVideoStreams: [stream])
+            }
+
+            agent.join(with: locator, joinCallOptions: options, completionHandler: { call, error in
+                DispatchQueue.main.async {
+                    if let error = error {
+                        result(FlutterError(code: "CALL_JOIN_FAILED", message: error.localizedDescription, details: nil))
+                        return
+                    }
+                    guard let call = call else {
+                        result(FlutterError(code: "CALL_JOIN_FAILED", message: "Failed to join call", details: nil))
+                        return
+                    }
+                    self.attachCall(call)
+                    result(["id": call.id, "state": self.callStateToString(call.state)])
+                }
+            })
+        }
+
+        if withVideo {
+            ensureLocalVideoStream { stream, error in
+                if let error = error {
+                    result(FlutterError(code: "VIDEO_UNAVAILABLE", message: error.localizedDescription, details: nil))
+                    return
+                }
+                guard let stream = stream else {
+                    result(FlutterError(code: "VIDEO_UNAVAILABLE", message: "Unable to access camera", details: nil))
+                    return
+                }
+                DispatchQueue.main.async {
+                    do {
+                        try self.viewManager.showLocalPreview(stream: stream)
+                    } catch {
+                        result(FlutterError(code: "VIDEO_START_FAILED", message: error.localizedDescription, details: nil))
+                        return
+                    }
+                    beginJoin(stream)
+                }
+            }
+        } else {
+            beginJoin(nil)
         }
     }
 
@@ -227,7 +347,7 @@ public class AcsFlutterSdkPlugin: NSObject, FlutterPlugin, CallDelegate, RemoteP
             return
         }
 
-        activeCall.hangUp(options: HangUpOptions()) { [weak self] error in
+        activeCall.hangUp(options: HangUpOptions(), completionHandler: { [weak self] error in
             DispatchQueue.main.async {
                 if let error = error {
                     result(FlutterError(code: "HANGUP_FAILED", message: error.localizedDescription, details: nil))
@@ -236,7 +356,7 @@ public class AcsFlutterSdkPlugin: NSObject, FlutterPlugin, CallDelegate, RemoteP
                     result(nil)
                 }
             }
-        }
+        })
     }
 
     private func muteAudio(result: @escaping FlutterResult) {
@@ -245,7 +365,7 @@ public class AcsFlutterSdkPlugin: NSObject, FlutterPlugin, CallDelegate, RemoteP
             return
         }
 
-        activeCall.muteOutgoingAudio { error in
+        activeCall.muteOutgoingAudio(completionHandler: { error in
             DispatchQueue.main.async {
                 if let error = error {
                     result(FlutterError(code: "MUTE_FAILED", message: error.localizedDescription, details: nil))
@@ -253,7 +373,7 @@ public class AcsFlutterSdkPlugin: NSObject, FlutterPlugin, CallDelegate, RemoteP
                     result(nil)
                 }
             }
-        }
+        })
     }
 
     private func unmuteAudio(result: @escaping FlutterResult) {
@@ -262,7 +382,7 @@ public class AcsFlutterSdkPlugin: NSObject, FlutterPlugin, CallDelegate, RemoteP
             return
         }
 
-        activeCall.unmuteOutgoingAudio { error in
+        activeCall.unmuteOutgoingAudio(completionHandler: { error in
             DispatchQueue.main.async {
                 if let error = error {
                     result(FlutterError(code: "UNMUTE_FAILED", message: error.localizedDescription, details: nil))
@@ -270,25 +390,34 @@ public class AcsFlutterSdkPlugin: NSObject, FlutterPlugin, CallDelegate, RemoteP
                     result(nil)
                 }
             }
-        }
+        })
     }
 
     private func startVideo(result: @escaping FlutterResult) {
-        DispatchQueue.main.async {
-            do {
-                guard let stream = try self.ensureLocalVideoStream() else {
-                    result(FlutterError(code: "VIDEO_UNAVAILABLE", message: "Camera not available", details: nil))
+        ensureLocalVideoStream { stream, error in
+            if let error = error {
+                result(FlutterError(code: "VIDEO_START_FAILED", message: error.localizedDescription, details: nil))
+                return
+            }
+            guard let stream = stream else {
+                result(FlutterError(code: "VIDEO_UNAVAILABLE", message: "Camera not available", details: nil))
+                return
+            }
+
+            DispatchQueue.main.async {
+                do {
+                    try self.viewManager.showLocalPreview(stream: stream)
+                } catch {
+                    result(FlutterError(code: "VIDEO_START_FAILED", message: error.localizedDescription, details: nil))
                     return
                 }
-
-                try self.viewManager.showLocalPreview(stream: stream)
 
                 guard let activeCall = self.call else {
                     result(nil)
                     return
                 }
 
-                activeCall.startVideo(stream: stream) { error in
+                activeCall.startVideo(stream: stream, completionHandler: { error in
                     DispatchQueue.main.async {
                         if let error = error {
                             result(FlutterError(code: "VIDEO_START_FAILED", message: error.localizedDescription, details: nil))
@@ -296,9 +425,7 @@ public class AcsFlutterSdkPlugin: NSObject, FlutterPlugin, CallDelegate, RemoteP
                             result(nil)
                         }
                     }
-                }
-            } catch {
-                result(FlutterError(code: "VIDEO_START_FAILED", message: error.localizedDescription, details: nil))
+                })
             }
         }
     }
@@ -320,7 +447,7 @@ public class AcsFlutterSdkPlugin: NSObject, FlutterPlugin, CallDelegate, RemoteP
             return
         }
 
-        activeCall.stopVideo(stream: stream) { [weak self] error in
+        activeCall.stopVideo(stream: stream, completionHandler: { [weak self] error in
             DispatchQueue.main.async {
                 if let error = error {
                     result(FlutterError(code: "VIDEO_STOP_FAILED", message: error.localizedDescription, details: nil))
@@ -329,32 +456,106 @@ public class AcsFlutterSdkPlugin: NSObject, FlutterPlugin, CallDelegate, RemoteP
                     result(nil)
                 }
             }
-        }
+        })
     }
 
     private func switchCamera(result: @escaping FlutterResult) {
-        DispatchQueue.main.async {
-            do {
-                guard let manager = try self.ensureDeviceManager(),
-                      let stream = self.localVideoStream else {
-                    result(FlutterError(code: "VIDEO_UNAVAILABLE", message: "No active camera stream", details: nil))
-                    return
-                }
+        ensureDeviceManager { manager in
+            guard let manager = manager, let stream = self.localVideoStream else {
+                result(FlutterError(code: "VIDEO_UNAVAILABLE", message: "No active camera stream", details: nil))
+                return
+            }
 
-                let cameras = manager.cameras
-                guard !cameras.isEmpty else {
-                    result(FlutterError(code: "VIDEO_UNAVAILABLE", message: "No cameras detected", details: nil))
-                    return
-                }
+            let cameras = manager.cameras
+            guard !cameras.isEmpty else {
+                result(FlutterError(code: "VIDEO_UNAVAILABLE", message: "No cameras detected", details: nil))
+                return
+            }
 
-                let current = self.currentCamera ?? cameras.first!
-                let currentIndex = cameras.firstIndex { $0.id == current.id } ?? 0
-                let nextCamera = cameras[(currentIndex + 1) % cameras.count]
-                try stream.switchSource(with: nextCamera)
-                self.currentCamera = nextCamera
-                result(nil)
-            } catch {
-                result(FlutterError(code: "SWITCH_CAMERA_FAILED", message: error.localizedDescription, details: nil))
+            let current = self.currentCamera ?? cameras.first!
+            let currentIndex = cameras.firstIndex { $0.id == current.id } ?? 0
+            let nextCamera = cameras[(currentIndex + 1) % cameras.count]
+            stream.switchSource(camera: nextCamera, completionHandler: { error in
+                DispatchQueue.main.async {
+                    if let error = error {
+                        result(FlutterError(code: "SWITCH_CAMERA_FAILED", message: error.localizedDescription, details: nil))
+                    } else {
+                        self.currentCamera = nextCamera
+                        result(nil)
+                    }
+                }
+            })
+        }
+    }
+
+    private func addParticipants(args: [String: Any], result: @escaping FlutterResult) {
+        guard let participantIds = args["participants"] as? [String], !participantIds.isEmpty else {
+            result(FlutterError(code: "INVALID_ARGUMENT", message: "Participants list is required", details: nil))
+            return
+        }
+        guard let activeCall = call else {
+            result(FlutterError(code: "NO_ACTIVE_CALL", message: "No active call", details: nil))
+            return
+        }
+
+        do {
+            for rawId in participantIds {
+                let identifier = createCommunicationIdentifier(fromRawId: rawId)
+                _ = try activeCall.add(participant: identifier)
+            }
+            result(["added": participantIds.count])
+        } catch {
+            result(FlutterError(code: "ADD_PARTICIPANT_FAILED", message: error.localizedDescription, details: nil))
+        }
+    }
+
+    private func removeParticipants(args: [String: Any], result: @escaping FlutterResult) {
+        guard let participantIds = args["participants"] as? [String], !participantIds.isEmpty else {
+            result(FlutterError(code: "INVALID_ARGUMENT", message: "Participants list is required", details: nil))
+            return
+        }
+        guard let activeCall = call else {
+            result(FlutterError(code: "NO_ACTIVE_CALL", message: "No active call", details: nil))
+            return
+        }
+
+        var participantsToRemove: [(String, RemoteParticipant)] = []
+        var missing: [String] = []
+
+        for rawId in participantIds {
+            if let participant = activeCall.remoteParticipants.first(where: { $0.identifier.rawId == rawId }) {
+                participantsToRemove.append((rawId, participant))
+            } else {
+                missing.append(rawId)
+            }
+        }
+
+        guard !participantsToRemove.isEmpty else {
+            result(["removed": 0, "missing": missing])
+            return
+        }
+
+        let group = DispatchGroup()
+        var removalError: FlutterError?
+
+        for (_, participant) in participantsToRemove {
+            group.enter()
+            activeCall.remove(participant: participant) { error in
+                if let error = error, removalError == nil {
+                    removalError = FlutterError(code: "REMOVE_PARTICIPANT_FAILED", message: error.localizedDescription, details: participant.identifier.rawId)
+                }
+                group.leave()
+            }
+        }
+
+        group.notify(queue: .main) {
+            if let error = removalError {
+                result(error)
+            } else {
+                result([
+                    "removed": participantsToRemove.count,
+                    "missing": missing,
+                ])
             }
         }
     }
@@ -418,49 +619,57 @@ public class AcsFlutterSdkPlugin: NSObject, FlutterPlugin, CallDelegate, RemoteP
     private func answerIncomingCall() {
         guard let incoming = incomingCall else { return }
 
-        DispatchQueue.main.async {
+        ensureLocalVideoStream { stream, _ in
             let options = AcceptCallOptions()
-            var previewStream: LocalVideoStream?
-            if let stream = try? self.ensureLocalVideoStream() {
-                previewStream = stream
+            if let stream = stream {
+                options.videoOptions = VideoOptions(localVideoStreams: [stream])
+                DispatchQueue.main.async {
+                    try? self.viewManager.showLocalPreview(stream: stream)
+                }
             }
 
-            if let previewStream = previewStream {
-                options.videoOptions = VideoOptions(localVideoStreams: [previewStream])
-                try? self.viewManager.showLocalPreview(stream: previewStream)
-            }
-
-            incoming.accept(options: options) { [weak self] call, _ in
+            incoming.accept(options: options, completionHandler: { [weak self] call, _ in
                 guard let self = self else { return }
                 if let call = call {
                     self.attachCall(call)
                 }
                 self.incomingCall = nil
+            })
+        }
+    }
+
+    private func ensureDeviceManager(completion: @escaping (DeviceManager?) -> Void) {
+        if let manager = deviceManager {
+            completion(manager)
+            return
+        }
+        callClient.getDeviceManager(completionHandler: { [weak self] manager, _ in
+            if let manager = manager {
+                self?.deviceManager = manager
+            }
+            completion(manager)
+        })
+    }
+
+    private func ensureLocalVideoStream(completion: @escaping (LocalVideoStream?, Error?) -> Void) {
+        if let stream = localVideoStream {
+            completion(stream, nil)
+            return
+        }
+        ensureDeviceManager { manager in
+            guard let manager = manager, let camera = manager.cameras.first else {
+                completion(nil, NSError(domain: "acs_flutter_sdk", code: -1, userInfo: [NSLocalizedDescriptionKey: "No camera available"]))
+                return
+            }
+            do {
+                let stream = try LocalVideoStream(camera: camera)
+                self.localVideoStream = stream
+                self.currentCamera = camera
+                completion(stream, nil)
+            } catch {
+                completion(nil, error)
             }
         }
-    }
-
-    private func ensureDeviceManager() throws -> DeviceManager? {
-        if let manager = deviceManager {
-            return manager
-        }
-        let manager = try callClient.getDeviceManager()
-        deviceManager = manager
-        return manager
-    }
-
-    private func ensureLocalVideoStream() throws -> LocalVideoStream? {
-        if let stream = localVideoStream {
-            return stream
-        }
-        guard let manager = try ensureDeviceManager(),
-              let camera = manager.cameras.first else {
-            return nil
-        }
-        let stream = try LocalVideoStream(camera: camera)
-        localVideoStream = stream
-        currentCamera = camera
-        return stream
     }
 
     private func callStateToString(_ state: CallState) -> String {
@@ -517,18 +726,17 @@ public class AcsFlutterSdkPlugin: NSObject, FlutterPlugin, CallDelegate, RemoteP
 
         let request = CreateChatThreadRequest(topic: topic, participants: participants)
 
-        client.create(thread: request) { response, error in
-            if let error = error {
+        client.create(thread: request) { createResult, _ in
+            switch createResult {
+            case .failure(let error):
                 result(FlutterError(code: "CREATE_THREAD_FAILED", message: error.localizedDescription, details: nil))
-                return
+            case .success(let response):
+                guard let thread = response.chatThread else {
+                    result(FlutterError(code: "CREATE_THREAD_FAILED", message: "Failed to create chat thread", details: nil))
+                    return
+                }
+                result(["id": thread.id, "topic": thread.topic ?? ""])
             }
-
-            guard let thread = response?.chatThread else {
-                result(FlutterError(code: "CREATE_THREAD_FAILED", message: "Failed to create chat thread", details: nil))
-                return
-            }
-
-            result(["id": thread.id, "topic": thread.topic ?? ""])
         }
     }
 
@@ -570,16 +778,12 @@ public class AcsFlutterSdkPlugin: NSObject, FlutterPlugin, CallDelegate, RemoteP
                 metadata: nil
             )
 
-            threadClient.send(message: request) { response, error in
-                if let error = error {
+            threadClient.send(message: request) { sendResult, _ in
+                switch sendResult {
+                case .failure(let error):
                     result(FlutterError(code: "SEND_MESSAGE_FAILED", message: error.localizedDescription, details: nil))
-                    return
-                }
-
-                if let messageId = response?.id {
-                    result(messageId)
-                } else {
-                    result(FlutterError(code: "SEND_MESSAGE_FAILED", message: "Failed to send message", details: nil))
+                case .success(let response):
+                    result(response.id)
                 }
             }
         } catch {
@@ -600,32 +804,32 @@ public class AcsFlutterSdkPlugin: NSObject, FlutterPlugin, CallDelegate, RemoteP
         do {
             let threadClient = try client.createClient(forThread: threadId)
             let maxMessages = args["maxMessages"] as? Int ?? 20
-            let options = ListChatMessagesOptions(maxPageSize: maxMessages)
+            let options = ListChatMessagesOptions(maxPageSize: Int32(maxMessages))
 
-            threadClient.listMessages(withOptions: options) { response, error in
-                if let error = error {
+            threadClient.listMessages(withOptions: options) { [weak self] listResult, _ in
+                guard let self = self else { return }
+                switch listResult {
+                case .failure(let error):
                     result(FlutterError(code: "GET_MESSAGES_FAILED", message: error.localizedDescription, details: nil))
-                    return
+                case .success(let response):
+                    let items = response.items ?? []
+                    let messages: [[String: Any]] = items.map { chatMessage in
+                        [
+                            "id": chatMessage.id,
+                            "content": chatMessage.content?.message ?? "",
+                            "senderId": self.identifierString(from: chatMessage.sender),
+                            "sentOn": chatMessage.createdOn.value.iso8601String()
+                        ]
+                    }
+                    result(messages)
                 }
-
-                let items = response?.items ?? []
-                let messages = items.compactMap { message -> [String: Any]? in
-                    guard let chatMessage = message as? ChatMessage else { return nil }
-                    return [
-                        "id": chatMessage.id ?? "",
-                        "content": chatMessage.content?.message ?? "",
-                        "senderId": chatMessage.sender?.identifier ?? "",
-                        "sentOn": chatMessage.createdOn?.iso8601String() ?? ""
-                    ]
-                }
-                result(messages)
             }
         } catch {
             result(FlutterError(code: "GET_MESSAGES_FAILED", message: error.localizedDescription, details: nil))
         }
     }
 
-    private func sendTypingNotification(result: FlutterResult) {
+    private func sendTypingNotification(result: @escaping FlutterResult) {
         guard let threadClient = chatThreadClient else {
             result(FlutterError(
                 code: "NOT_INITIALIZED",
@@ -635,33 +839,39 @@ public class AcsFlutterSdkPlugin: NSObject, FlutterPlugin, CallDelegate, RemoteP
             return
         }
 
-        threadClient.sendTypingNotification { error in
+        threadClient.sendTypingNotification { sendResult, _ in
             DispatchQueue.main.async {
-                if let error = error {
+                switch sendResult {
+                case .failure(let error):
                     result(FlutterError(code: "TYPING_NOTIFICATION_FAILED", message: error.localizedDescription, details: nil))
-                } else {
+                case .success:
                     result(nil)
                 }
             }
         }
     }
 
+    private func identifierString(from identifier: CommunicationIdentifier?) -> String {
+        guard let identifier = identifier else { return "" }
+        return identifier.rawId
+    }
+
     // MARK: - CallDelegate
 
-    public func call(_ call: Call, didUpdateState args: PropertyChangedEvent) {
+    public func call(_ call: Call, didUpdateState args: PropertyChangedEventArgs) {
         if call.state == .disconnected {
             cleanupCallResources()
         }
     }
 
-    public func call(_ call: Call, didUpdateRemoteParticipants args: ParticipantsUpdatedEvent) {
+    public func call(_ call: Call, didUpdateRemoteParticipants args: ParticipantsUpdatedEventArgs) {
         handleAddedParticipants(args.addedParticipants)
         handleRemovedParticipants(args.removedParticipants)
     }
 
     // MARK: - RemoteParticipantDelegate
 
-    public func remoteParticipant(_ remoteParticipant: RemoteParticipant, didUpdateVideoStreams args: RemoteVideoStreamsEvent) {
+    public func remoteParticipant(_ remoteParticipant: RemoteParticipant, didUpdateVideoStreams args: RemoteVideoStreamsEventArgs) {
         args.addedRemoteVideoStreams.forEach { subscribeRemoteStream($0) }
         args.removedRemoteVideoStreams.forEach { removeRemoteStream(streamId: Int($0.id)) }
     }

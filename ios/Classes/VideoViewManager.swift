@@ -31,7 +31,7 @@ class VideoViewManager {
     func showLocalPreview(stream: LocalVideoStream) throws {
         if previewRenderer != nil { return }
 
-        let renderer = try VideoStreamRenderer(stream: stream)
+        let renderer = try VideoStreamRenderer(localVideoStream: stream)
         let view = try renderer.createView()
         view.translatesAutoresizingMaskIntoConstraints = false
 

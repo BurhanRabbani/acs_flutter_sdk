@@ -6,17 +6,20 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Handler
 import android.os.Looper
-import androidx.core.app ActivityCompat
+import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import com.azure.android.communication.calling.*
+import com.azure.android.communication.calling.TeamsMeetingLinkLocator
 import com.azure.android.communication.chat.ChatClient
 import com.azure.android.communication.chat.ChatClientBuilder
 import com.azure.android.communication.chat.ChatParticipant
 import com.azure.android.communication.chat.ChatThreadClient
 import com.azure.android.communication.chat.CreateChatThreadOptions
 import com.azure.android.communication.chat.ListChatMessagesOptions
+import com.azure.android.communication.common.CommunicationIdentifier
 import com.azure.android.communication.common.CommunicationTokenCredential
 import com.azure.android.communication.common.CommunicationUserIdentifier
+import com.azure.android.communication.common.PhoneNumberIdentifier
 import io.flutter.embedding.engine.plugins.FlutterPlugin
 import io.flutter.embedding.engine.plugins.activity.ActivityAware
 import io.flutter.embedding.engine.plugins.activity.ActivityPluginBinding
@@ -25,6 +28,7 @@ import io.flutter.plugin.common.MethodChannel
 import io.flutter.plugin.common.MethodChannel.MethodCallHandler
 import io.flutter.plugin.common.MethodChannel.Result
 import java.util.UUID
+import java.util.concurrent.CompletableFuture
 import java.util.concurrent.Executors
 
 /**
@@ -126,12 +130,15 @@ class AcsFlutterSdkPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
             "requestPermissions" -> requestPermissions(result)
             "startCall" -> startCall(call, result)
             "joinCall" -> joinCall(call, result)
+            "joinTeamsMeeting" -> joinTeamsMeeting(call, result)
             "endCall" -> endCall(result)
             "muteAudio" -> muteAudio(result)
             "unmuteAudio" -> unmuteAudio(result)
             "startVideo" -> startVideo(result)
             "stopVideo" -> stopVideo(result)
             "switchCamera" -> switchCamera(result)
+            "addParticipants" -> addParticipants(call, result)
+            "removeParticipants" -> removeParticipants(call, result)
 
             // Chat methods
             "initializeChat" -> initializeChat(call, result)
@@ -441,6 +448,126 @@ class AcsFlutterSdkPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
         }
     }
 
+    private fun joinTeamsMeeting(call: MethodCall, result: Result) {
+        val meetingLink = call.argument<String>("meetingLink")
+        if (meetingLink.isNullOrBlank()) {
+            result.error("INVALID_ARGUMENT", "Teams meeting link is required", null)
+            return
+        }
+        if (callAgent == null) {
+            result.error("NOT_INITIALIZED", "Call agent not initialized. Call initializeCalling first.", null)
+            return
+        }
+
+        val withVideo = call.argument<Boolean>("withVideo") ?: false
+
+        executor.execute {
+            try {
+                val options = JoinCallOptions()
+                if (withVideo) {
+                    ensureLocalVideoStream()?.let { stream ->
+                        options.videoOptions = VideoOptions(arrayOf(stream))
+                        viewManager?.showLocalPreview(context, stream)
+                    }
+                }
+                val locator = TeamsMeetingLinkLocator(meetingLink)
+                val joinedCall = callAgent!!.join(context, locator, options)
+                attachCall(joinedCall)
+                runOnMainThread {
+                    result.success(
+                        mapOf(
+                            "id" to joinedCall.id,
+                            "state" to callStateToString(joinedCall.state)
+                        )
+                    )
+                }
+            } catch (e: Exception) {
+                runOnMainThread { result.error("CALL_JOIN_FAILED", e.message, null) }
+            }
+        }
+    }
+
+    private fun addParticipants(call: MethodCall, result: Result) {
+        val participantIds = call.argument<List<String>>("participants")
+        if (participantIds.isNullOrEmpty()) {
+            result.error("INVALID_ARGUMENT", "Participants list is required", null)
+            return
+        }
+        val activeCall = this.call
+        if (activeCall == null) {
+            result.error("NO_ACTIVE_CALL", "No active call", null)
+            return
+        }
+
+        executor.execute {
+            try {
+                participantIds.forEach { rawId ->
+                    val identifier = buildIdentifier(rawId)
+                    activeCall.addParticipant(identifier)
+                }
+                runOnMainThread { result.success(mapOf("added" to participantIds.size)) }
+            } catch (e: Exception) {
+                runOnMainThread { result.error("ADD_PARTICIPANT_FAILED", e.message, null) }
+            }
+        }
+    }
+
+    private fun removeParticipants(call: MethodCall, result: Result) {
+        val participantIds = call.argument<List<String>>("participants")
+        if (participantIds.isNullOrEmpty()) {
+            result.error("INVALID_ARGUMENT", "Participants list is required", null)
+            return
+        }
+        val activeCall = this.call
+        if (activeCall == null) {
+            result.error("NO_ACTIVE_CALL", "No active call", null)
+            return
+        }
+
+        executor.execute {
+            try {
+                val remoteParticipants = activeCall.remoteParticipants
+                val participantsToRemove = mutableListOf<Pair<String, RemoteParticipant>>()
+                val missing = mutableListOf<String>()
+
+                participantIds.forEach { rawId ->
+                    val participant = remoteParticipants.firstOrNull { it.identifier?.rawId == rawId }
+                    if (participant != null) {
+                        participantsToRemove.add(rawId to participant)
+                    } else {
+                        missing.add(rawId)
+                    }
+                }
+
+                if (participantsToRemove.isEmpty()) {
+                    runOnMainThread { result.success(mapOf("removed" to 0, "missing" to missing)) }
+                    return@execute
+                }
+
+                val futures = participantsToRemove.map { (_, participant) ->
+                    activeCall.removeParticipant(participant)
+                }
+
+                CompletableFuture.allOf(*futures.toTypedArray()).whenComplete { _, error ->
+                    if (error != null) {
+                        runOnMainThread { result.error("REMOVE_PARTICIPANT_FAILED", error.message, null) }
+                    } else {
+                        runOnMainThread {
+                            result.success(
+                                mapOf(
+                                    "removed" to participantsToRemove.size,
+                                    "missing" to missing
+                                )
+                            )
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                runOnMainThread { result.error("REMOVE_PARTICIPANT_FAILED", e.message, null) }
+            }
+        }
+    }
+
     private fun attachCall(newCall: Call) {
         cleanupCallResources()
         call = newCall
@@ -714,6 +841,14 @@ class AcsFlutterSdkPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
             action()
         } else {
             mainHandler.post(action)
+        }
+    }
+
+    private fun buildIdentifier(rawId: String): CommunicationIdentifier {
+        return if (rawId.startsWith("+")) {
+            PhoneNumberIdentifier(rawId)
+        } else {
+            CommunicationIdentifier.fromRawId(rawId)
         }
     }
 

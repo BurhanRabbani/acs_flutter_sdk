@@ -275,11 +275,14 @@ class CallingTab extends StatefulWidget {
 class _CallingTabState extends State<CallingTab> {
   final _accessTokenController = TextEditingController();
   final _participantController = TextEditingController();
+  final _groupCallIdController = TextEditingController();
+  final _meetingLinkController = TextEditingController();
   String _status = 'Not initialized';
   bool _isLoading = false;
   bool _isInCall = false;
   bool _isMuted = false;
   bool _isVideoOn = false;
+  bool _joinWithVideo = false;
   late AcsCallClient _callClient;
 
   @override
@@ -292,6 +295,8 @@ class _CallingTabState extends State<CallingTab> {
   void dispose() {
     _accessTokenController.dispose();
     _participantController.dispose();
+    _groupCallIdController.dispose();
+    _meetingLinkController.dispose();
     _callClient.dispose();
     super.dispose();
   }
@@ -332,10 +337,11 @@ class _CallingTabState extends State<CallingTab> {
     try {
       await _callClient.startCall([
         _participantController.text,
-      ], withVideo: _isVideoOn);
+      ], withVideo: _joinWithVideo);
       setState(() {
         _status = 'Call started';
         _isInCall = true;
+        _isVideoOn = _joinWithVideo;
         _isLoading = false;
       });
       _showSuccess('Call started');
@@ -344,6 +350,65 @@ class _CallingTabState extends State<CallingTab> {
         _status = 'Error: $e';
         _isLoading = false;
       });
+      _showError(e.toString());
+    }
+  }
+
+  Future<void> _joinGroupCall() async {
+    if (_groupCallIdController.text.isEmpty) {
+      _showError('Please enter a group call ID');
+      return;
+    }
+
+    setState(() => _isLoading = true);
+
+    try {
+      await _callClient.joinCall(
+        _groupCallIdController.text,
+        withVideo: _joinWithVideo,
+      );
+      setState(() {
+        _status = 'Joined group call';
+        _isInCall = true;
+        _isVideoOn = _joinWithVideo;
+        _isLoading = false;
+      });
+      _showSuccess('Joined group call');
+    } catch (e) {
+      setState(() {
+        _status = 'Error: $e';
+        _isLoading = false;
+      });
+      _showError(e.toString());
+    }
+  }
+
+  Future<void> _joinTeamsMeeting() async {
+    if (_meetingLinkController.text.isEmpty) {
+      _showError('Please enter a Teams meeting link');
+      return;
+    }
+
+    setState(() => _isLoading = true);
+
+    try {
+      await _callClient.joinTeamsMeeting(
+        _meetingLinkController.text,
+        withVideo: _joinWithVideo,
+      );
+      setState(() {
+        _status = 'Joined Teams meeting';
+        _isInCall = true;
+        _isVideoOn = _joinWithVideo;
+        _isLoading = false;
+      });
+      _showSuccess('Joined Teams meeting');
+    } catch (e) {
+      setState(() {
+        _status = 'Error: $e';
+        _isLoading = false;
+      });
+      print(e.toString());
       _showError(e.toString());
     }
   }
@@ -468,6 +533,14 @@ class _CallingTabState extends State<CallingTab> {
             label: const Text('Request Permissions'),
           ),
           const Divider(height: 32),
+          SwitchListTile(
+            value: _joinWithVideo,
+            onChanged: _isInCall
+                ? null
+                : (value) => setState(() => _joinWithVideo = value),
+            title: const Text('Enable video when joining or starting a call'),
+          ),
+          const SizedBox(height: 12),
           TextField(
             controller: _participantController,
             decoration: const InputDecoration(
@@ -476,8 +549,29 @@ class _CallingTabState extends State<CallingTab> {
               border: OutlineInputBorder(),
             ),
           ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _groupCallIdController,
+            decoration: const InputDecoration(
+              labelText: 'Group Call ID',
+              hintText: '00000000-0000-0000-0000-000000000000',
+              border: OutlineInputBorder(),
+              helperText: 'Join an existing ACS group call',
+            ),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _meetingLinkController,
+            decoration: const InputDecoration(
+              labelText: 'Teams Meeting Link',
+              hintText: 'https://teams.microsoft.com/l/meetup-join/...',
+              border: OutlineInputBorder(),
+              helperText: 'Paste the full Teams meeting URL',
+            ),
+            maxLines: 3,
+          ),
           const SizedBox(height: 16),
-          if (!_isInCall)
+          if (!_isInCall) ...[
             ElevatedButton.icon(
               onPressed: _isLoading ? null : _startCall,
               icon: const Icon(Icons.call),
@@ -486,8 +580,20 @@ class _CallingTabState extends State<CallingTab> {
                 backgroundColor: Colors.green,
                 foregroundColor: Colors.white,
               ),
-            )
-          else ...[
+            ),
+            const SizedBox(height: 8),
+            ElevatedButton.icon(
+              onPressed: _isLoading ? null : _joinGroupCall,
+              icon: const Icon(Icons.groups),
+              label: const Text('Join Group Call'),
+            ),
+            const SizedBox(height: 8),
+            ElevatedButton.icon(
+              onPressed: _isLoading ? null : _joinTeamsMeeting,
+              icon: const Icon(Icons.meeting_room),
+              label: const Text('Join Teams Meeting'),
+            ),
+          ] else ...[
             Row(
               children: [
                 Expanded(

@@ -25,6 +25,11 @@ void main() {
             'id': 'call-456',
             'state': 'connecting',
           };
+        case 'joinTeamsMeeting':
+          return {
+            'id': 'call-789',
+            'state': 'connecting',
+          };
         case 'endCall':
           return null;
         case 'muteAudio':
@@ -39,6 +44,15 @@ void main() {
           return null;
         case 'switchCamera':
           return null;
+        case 'addParticipants':
+          return {
+            'added': (methodCall.arguments['participants'] as List).length
+          };
+        case 'removeParticipants':
+          return {
+            'removed': (methodCall.arguments['participants'] as List).length,
+            'missing': <String>[],
+          };
         default:
           throw PlatformException(code: 'NOT_IMPLEMENTED');
       }
@@ -135,6 +149,17 @@ void main() {
       expect(call, isA<Call>());
     });
 
+    test('joinTeamsMeeting calls platform method with link', () async {
+      final call =
+          await client.joinTeamsMeeting('https://teams.microsoft.com/fake');
+
+      expect(log, hasLength(1));
+      expect(log[0].method, 'joinTeamsMeeting');
+      expect(
+          log[0].arguments['meetingLink'], 'https://teams.microsoft.com/fake');
+      expect(call.id, 'call-789');
+    });
+
     test('endCall calls platform method', () async {
       await client.endCall();
 
@@ -182,6 +207,22 @@ void main() {
 
       expect(log, hasLength(1));
       expect(log[0].method, 'switchCamera');
+    });
+
+    test('addParticipants calls platform method with ids', () async {
+      await client.addParticipants(['user-3', 'user-4']);
+
+      expect(log, hasLength(1));
+      expect(log[0].method, 'addParticipants');
+      expect(log[0].arguments['participants'], ['user-3', 'user-4']);
+    });
+
+    test('removeParticipants calls platform method with ids', () async {
+      await client.removeParticipants(['user-2']);
+
+      expect(log, hasLength(1));
+      expect(log[0].method, 'removeParticipants');
+      expect(log[0].arguments['participants'], ['user-2']);
     });
   });
 

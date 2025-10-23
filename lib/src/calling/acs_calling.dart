@@ -49,6 +49,36 @@ class AcsCallClient {
     }
   }
 
+  /// Adds one or more participants to the active call.
+  Future<void> addParticipants(List<String> participants) async {
+    try {
+      await _channel.invokeMethod('addParticipants', {
+        'participants': participants,
+      });
+    } on PlatformException catch (e) {
+      throw AcsCallingException(
+        code: e.code,
+        message: e.message ?? 'Failed to add participant(s)',
+        details: e.details,
+      );
+    }
+  }
+
+  /// Removes one or more participants from the active call.
+  Future<void> removeParticipants(List<String> participants) async {
+    try {
+      await _channel.invokeMethod('removeParticipants', {
+        'participants': participants,
+      });
+    } on PlatformException catch (e) {
+      throw AcsCallingException(
+        code: e.code,
+        message: e.message ?? 'Failed to remove participant(s)',
+        details: e.details,
+      );
+    }
+  }
+
   /// Starts a new call to the specified participants
   ///
   /// [participants] is a list of user IDs to call
@@ -93,6 +123,24 @@ class AcsCallClient {
       throw AcsCallingException(
         code: e.code,
         message: e.message ?? 'Failed to join call',
+        details: e.details,
+      );
+    }
+  }
+
+  /// Joins a Teams meeting using the full meeting link.
+  Future<Call> joinTeamsMeeting(String meetingLink,
+      {bool withVideo = false}) async {
+    try {
+      final result = await _channel.invokeMethod('joinTeamsMeeting', {
+        'meetingLink': meetingLink,
+        'withVideo': withVideo,
+      });
+      return Call.fromMap(Map<String, dynamic>.from(result));
+    } on PlatformException catch (e) {
+      throw AcsCallingException(
+        code: e.code,
+        message: e.message ?? 'Failed to join Teams meeting',
         details: e.details,
       );
     }

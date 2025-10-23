@@ -21,7 +21,7 @@ enabling voice/video calling, chat, SMS, and identity management capabilities in
   # Azure Communication Services dependencies
   s.dependency 'AzureCommunicationCalling', '~> 2.15.1'
   s.dependency 'AzureCommunicationChat', '~> 1.3.6'
-  s.dependency 'AzureCommunicationCommon', '~> 1.3.0'
+  # AzureCommunicationCommon will be resolved automatically by Calling and Chat dependencies
 
   # Flutter.framework does not contain a i386 slice.
   s.pod_target_xcconfig = { 'DEFINES_MODULE' => 'YES', 'EXCLUDED_ARCHS[sdk=iphonesimulator*]' => 'i386' }
