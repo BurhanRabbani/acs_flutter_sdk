@@ -12,7 +12,6 @@ topics:
   - calling
   - chat
   - voip
-  - video-call
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
