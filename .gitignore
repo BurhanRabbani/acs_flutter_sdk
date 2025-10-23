@@ -32,8 +32,8 @@ migrate_working_dir/
 /build/
 /coverage/
 
-# Temporary build artifacts
-com/
+# Temporary build artifacts (HTML docs at root level only)
+/com/
 
 # iOS Podfile.lock in example
 example/ios/Podfile.lock
