@@ -1,18 +1,18 @@
 # Azure Communication Services Flutter SDK
 
-A comprehensive Flutter plugin that provides a wrapper for Microsoft Azure Communication Services (ACS), enabling voice/video calling, chat, SMS, and identity management capabilities in Flutter applications.
+A Flutter plugin that wraps Microsoft Azure Communication Services (ACS), enabling token-based voice calling and chat workflows in Flutter applications.
 
 [![pub package](https://img.shields.io/pub/v/acs_flutter_sdk.svg)](https://pub.dev/packages/acs_flutter_sdk)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 ## Features
 
-- ✅ **Identity Management**: Create users and manage access tokens
-- ✅ **Voice & Video Calling**: Make and receive voice and video calls with full call controls
-- ✅ **Chat**: Send and receive messages in chat threads with real-time notifications
-- ✅ **Cross-platform**: Supports both Android and iOS
-- ✅ **Type-safe**: Built with sound null safety
-- ✅ **Well-documented**: Comprehensive API documentation and examples
+- ✅ **Token-based initialization** for ACS Calling and Chat SDKs
+- ✅ **Audio calling controls**: start, join, mute/unmute, and hang up ACS calls
+- ✅ **Chat thread APIs**: create/join threads, send messages, and list history (requires ACS endpoint)
+- ⚠️ **Identity management**: limited to development helpers—production flows must run on your backend
+- ✅ **Video support**: start/stop local video, switch cameras, and render platform-native preview/remote streams on Android & iOS
+- ✅ **Cross-platform**: Supports Android (API 24+) and iOS (13.0+)
 
 ## Platform Support
 
@@ -29,7 +29,7 @@ Add this to your package's `pubspec.yaml` file:
 
 ```yaml
 dependencies:
-  acs_flutter_sdk: ^0.1.0
+  acs_flutter_sdk: ^0.1.1
 ```
 
 Then run:
@@ -92,21 +92,20 @@ final sdk = AcsFlutterSdk();
 
 ### Identity Management
 
-**Important**: For production applications, identity operations (creating users and generating tokens) should be performed server-side for security. The SDK provides these methods for development and testing purposes.
+> ℹ️ Production guidance: ACS identity creation and token issuance must happen on a secure backend. The plugin only exposes a lightweight initialization helper so the native SDKs can be configured during development.
 
 ```dart
 // Create an identity client
 final identityClient = sdk.createIdentityClient();
 
-// Initialize with your connection string (server-side recommended)
+// Initialize with your connection string (local development only)
 await identityClient.initialize('your-connection-string');
 
-// Note: In production, call your backend API to create users and get tokens
-// Example server-side flow:
-// 1. Your app requests a token from your backend
-// 2. Your backend creates a user and generates a token using ACS SDK
-// 3. Your backend returns the token to your app
-// 4. Your app uses the token to initialize calling/chat clients
+// For production:
+// 1. Your app requests a token from your backend.
+// 2. The backend uses an ACS Communication Identity SDK to create users and tokens.
+// 3. The backend returns the short-lived token to your app.
+// 4. The app passes the token into the calling/chat clients shown below.
 ```
 
 ### Voice & Video Calling
@@ -118,6 +117,9 @@ final callingClient = sdk.createCallClient();
 // Initialize with an access token (obtained from your backend)
 await callingClient.initialize('your-access-token');
 
+// Request camera/microphone permissions before starting video calls
+await callingClient.requestPermissions();
+
 // Start a call to one or more participants
 final call = await callingClient.startCall(
   ['user-id-1', 'user-id-2'],
@@ -125,17 +127,15 @@ final call = await callingClient.startCall(
 );
 
 // Join an existing group call
-final call = await callingClient.joinCall(
-  'group-call-id',
-  withVideo: false,
-);
+final joined = await callingClient.joinCall('group-call-id', withVideo: true);
 
 // Mute/unmute audio
 await callingClient.muteAudio();
 await callingClient.unmuteAudio();
 
-// Start/stop video
+// Start/stop local video and switch cameras
 await callingClient.startVideo();
+await callingClient.switchCamera();
 await callingClient.stopVideo();
 
 // End the call
@@ -147,14 +147,24 @@ callingClient.callStateStream.listen((state) {
 });
 ```
 
+Embed the platform-rendered video views in your widget tree:
+
+```dart
+const SizedBox(height: 160, child: AcsLocalVideoView());
+const SizedBox(height: 240, child: AcsRemoteVideoView());
+```
+
 ### Chat
 
 ```dart
 // Create a chat client
 final chatClient = sdk.createChatClient();
 
-// Initialize with an access token (obtained from your backend)
-await chatClient.initialize('your-access-token');
+// Initialize with an access token and resource endpoint
+await chatClient.initialize(
+  'your-access-token',
+  endpoint: 'https://<RESOURCE>.communication.azure.com',
+);
 
 // Create a new chat thread
 final thread = await chatClient.createChatThread(
@@ -177,14 +187,10 @@ final messages = await chatClient.getMessages(thread.id, maxMessages: 50);
 // Send typing notification
 await chatClient.sendTypingNotification(thread.id);
 
-// Listen to incoming messages
+// (Preview) Realtime event streams will be fleshed out in a future release.
+// Subscribe now to prepare for upcoming updates.
 chatClient.messageStream.listen((message) {
   print('New message: ${message.content}');
-});
-
-// Listen to typing indicators
-chatClient.typingIndicatorStream.listen((indicator) {
-  print('${indicator.userId} is typing...');
 });
 ```
 
@@ -266,6 +272,7 @@ If you encounter build issues on iOS:
 ### Permission Issues
 
 Ensure all required permissions are added to your platform-specific configuration files as described in the Platform Setup section.
+On Android 6.0+ and iOS 10+, request camera/microphone permissions at runtime before starting calls (e.g. with [`permission_handler`](https://pub.dev/packages/permission_handler)).
 
 ## Contributing
 
@@ -282,6 +289,6 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## Support
 
-For issues and feature requests, please file an issue on [GitHub](https://github.com/yourusername/acs_flutter_sdk/issues).
+For issues and feature requests, please file an issue on [GitHub](https://github.com/BurhanRabbani/acs_flutter_sdk/issues).
 
 For Azure Communication Services specific questions, refer to the [official documentation](https://docs.microsoft.com/en-us/azure/communication-services/).

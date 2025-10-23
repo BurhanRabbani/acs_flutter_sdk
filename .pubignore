@@ -1,0 +1,8 @@
+.dart_tool/
+.idea/
+.vscode/
+build/
+coverage/
+migrate_working_dir/
+pubspec.lock
+acs_flutter_sdk.iml

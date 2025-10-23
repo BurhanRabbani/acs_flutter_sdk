@@ -7,6 +7,7 @@ void main() {
 
   const MethodChannel channel = MethodChannel('acs_flutter_sdk');
   final List<MethodCall> log = <MethodCall>[];
+  const endpoint = 'https://example.communication.azure.com';
 
   setUp(() {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
@@ -66,12 +67,16 @@ void main() {
     });
 
     test('initialize calls platform method with token', () async {
-      await client.initialize('eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...');
+      await client.initialize(
+        'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...',
+        endpoint: endpoint,
+      );
 
       expect(log, hasLength(1));
       expect(log[0].method, 'initializeChat');
       expect(log[0].arguments['accessToken'],
           'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...');
+      expect(log[0].arguments['endpoint'], endpoint);
     });
 
     test('initialize throws AcsChatException on platform error', () async {
@@ -82,7 +87,7 @@ void main() {
       });
 
       expect(
-        () => client.initialize('invalid'),
+        () => client.initialize('invalid', endpoint: endpoint),
         throwsA(isA<AcsChatException>()
             .having((e) => e.code, 'code', 'INIT_ERROR')),
       );
@@ -129,7 +134,10 @@ void main() {
 
     test('sendMessage calls platform method with threadId and content',
         () async {
-      final messageId = await client.sendMessage('thread-123', 'Hello, World!');
+      final messageFuture =
+          client.messageStream.first.timeout(const Duration(milliseconds: 100));
+      final messageId =
+          await client.sendMessage('thread-123', 'Hello, World!', senderId: 'user-1');
 
       expect(log, hasLength(1));
       expect(log[0].method, 'sendMessage');
@@ -137,6 +145,11 @@ void main() {
       expect(log[0].arguments['content'], 'Hello, World!');
       expect(messageId, isA<String>());
       expect(messageId, 'msg-123');
+
+      final emitted = await messageFuture;
+      expect(emitted.id, 'msg-123');
+      expect(emitted.senderId, 'user-1');
+      expect(emitted.content, 'Hello, World!');
     });
 
     test('getMessages calls platform method with threadId', () async {
@@ -161,11 +174,18 @@ void main() {
 
     test('sendTypingNotification calls platform method with threadId',
         () async {
-      await client.sendTypingNotification('thread-123');
+      final typingFuture = client.typingIndicatorStream
+          .first
+          .timeout(const Duration(milliseconds: 100));
+      await client.sendTypingNotification('thread-123', senderId: 'user-1');
 
       expect(log, hasLength(1));
       expect(log[0].method, 'sendTypingNotification');
       expect(log[0].arguments['threadId'], 'thread-123');
+
+      final indicator = await typingFuture;
+      expect(indicator.threadId, 'thread-123');
+      expect(indicator.userId, 'user-1');
     });
   });
 

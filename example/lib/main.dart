@@ -305,6 +305,7 @@ class _CallingTabState extends State<CallingTab> {
     setState(() => _isLoading = true);
 
     try {
+      await _callClient.requestPermissions();
       await _callClient.initialize(_accessTokenController.text);
       setState(() {
         _status = 'Calling client initialized';
@@ -392,10 +393,29 @@ class _CallingTabState extends State<CallingTab> {
         setState(() => _isVideoOn = false);
         _showSuccess('Video stopped');
       } else {
+        await _callClient.requestPermissions();
         await _callClient.startVideo();
         setState(() => _isVideoOn = true);
         _showSuccess('Video started');
       }
+    } catch (e) {
+      _showError(e.toString());
+    }
+  }
+
+  Future<void> _requestPermissions() async {
+    try {
+      await _callClient.requestPermissions();
+      _showSuccess('Permissions granted (or already granted)');
+    } catch (e) {
+      _showError(e.toString());
+    }
+  }
+
+  Future<void> _switchCamera() async {
+    try {
+      await _callClient.switchCamera();
+      _showSuccess('Camera switched');
     } catch (e) {
       _showError(e.toString());
     }
@@ -441,6 +461,12 @@ class _CallingTabState extends State<CallingTab> {
             icon: const Icon(Icons.login),
             label: const Text('Initialize Calling Client'),
           ),
+          const SizedBox(height: 12),
+          ElevatedButton.icon(
+            onPressed: _isLoading ? null : _requestPermissions,
+            icon: const Icon(Icons.verified_user),
+            label: const Text('Request Permissions'),
+          ),
           const Divider(height: 32),
           TextField(
             controller: _participantController,
@@ -485,6 +511,12 @@ class _CallingTabState extends State<CallingTab> {
             ),
             const SizedBox(height: 8),
             ElevatedButton.icon(
+              onPressed: _isVideoOn ? _switchCamera : null,
+              icon: const Icon(Icons.cameraswitch),
+              label: const Text('Switch Camera'),
+            ),
+            const SizedBox(height: 8),
+            ElevatedButton.icon(
               onPressed: _isLoading ? null : _endCall,
               icon: const Icon(Icons.call_end),
               label: const Text('End Call'),
@@ -521,6 +553,38 @@ class _CallingTabState extends State<CallingTab> {
               ),
             ),
           ),
+          const SizedBox(height: 16),
+          const Text(
+            'Local Preview',
+            style: TextStyle(fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 8),
+          SizedBox(
+            height: 160,
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: Colors.black,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Center(child: AcsLocalVideoView()),
+            ),
+          ),
+          const SizedBox(height: 16),
+          const Text(
+            'Remote Video',
+            style: TextStyle(fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 8),
+          SizedBox(
+            height: 240,
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: Colors.black,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Center(child: AcsRemoteVideoView()),
+            ),
+          ),
         ],
       ),
     );
@@ -539,6 +603,7 @@ class ChatTab extends StatefulWidget {
 
 class _ChatTabState extends State<ChatTab> {
   final _accessTokenController = TextEditingController();
+  final _endpointController = TextEditingController();
   final _threadIdController = TextEditingController();
   final _messageController = TextEditingController();
   String _status = 'Not initialized';
@@ -556,6 +621,7 @@ class _ChatTabState extends State<ChatTab> {
   @override
   void dispose() {
     _accessTokenController.dispose();
+    _endpointController.dispose();
     _threadIdController.dispose();
     _messageController.dispose();
     _chatClient.dispose();
@@ -567,11 +633,18 @@ class _ChatTabState extends State<ChatTab> {
       _showError('Please enter an access token');
       return;
     }
+    if (_endpointController.text.isEmpty) {
+      _showError('Please enter an ACS endpoint');
+      return;
+    }
 
     setState(() => _isLoading = true);
 
     try {
-      await _chatClient.initialize(_accessTokenController.text);
+      await _chatClient.initialize(
+        _accessTokenController.text,
+        endpoint: _endpointController.text,
+      );
       setState(() {
         _status = 'Chat client initialized';
         _isLoading = false;
@@ -614,6 +687,9 @@ class _ChatTabState extends State<ChatTab> {
 
   Future<void> _loadMessages() async {
     try {
+      if (_threadIdController.text.isEmpty) {
+        return;
+      }
       final messages = await _chatClient.getMessages(_threadIdController.text);
       setState(() {
         _messages.clear();
@@ -687,6 +763,17 @@ class _ChatTabState extends State<ChatTab> {
                   label: const Text('Initialize Chat Client'),
                 ),
                 const Divider(height: 32),
+                TextField(
+                  controller: _endpointController,
+                  decoration: const InputDecoration(
+                    labelText: 'ACS Endpoint',
+                    hintText: 'https://<RESOURCE>.communication.azure.com',
+                    border: OutlineInputBorder(),
+                    helperText:
+                        'Find this under Keys & Endpoint in the Azure Portal',
+                  ),
+                ),
+                const SizedBox(height: 16),
                 TextField(
                   controller: _threadIdController,
                   decoration: const InputDecoration(

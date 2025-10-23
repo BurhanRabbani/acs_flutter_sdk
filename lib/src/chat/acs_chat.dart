@@ -17,21 +17,29 @@ class AcsChatClient {
   /// [channel] is the method channel for communicating with native code
   AcsChatClient(this._channel);
 
-  /// Stream of incoming chat messages
+  /// Stream of incoming chat messages.
+  ///
+  /// Remote ACS notifications require additional configuration on native
+  /// platforms; the current release emits messages produced locally.
   Stream<ChatMessage> get messageStream => _messageController.stream;
 
-  /// Stream of typing indicators
+  /// Stream of typing indicators.
+  ///
+  /// Remote ACS notifications require additional configuration on native
+  /// platforms; the current release emits indicators triggered locally.
   Stream<TypingIndicator> get typingIndicatorStream => _typingController.stream;
 
   /// Initializes the chat client with an access token
   ///
   /// [accessToken] is the Azure Communication Services access token
+  /// [endpoint] is the Azure Communication Services endpoint, e.g. `https://<RESOURCE>.communication.azure.com`
   ///
   /// Throws an [AcsChatException] if initialization fails
-  Future<void> initialize(String accessToken) async {
+  Future<void> initialize(String accessToken, {required String endpoint}) async {
     try {
       await _channel.invokeMethod('initializeChat', {
         'accessToken': accessToken,
+        'endpoint': endpoint,
       });
     } on PlatformException catch (e) {
       throw AcsChatException(
@@ -93,17 +101,28 @@ class AcsChatClient {
   ///
   /// [threadId] is the ID of the thread to send the message to
   /// [content] is the message content
+  /// [senderId] optionally identifies the local user emitting the message for stream consumers
   ///
   /// Returns the ID of the sent message
   ///
   /// Throws an [AcsChatException] if sending fails
-  Future<String> sendMessage(String threadId, String content) async {
+  Future<String> sendMessage(String threadId, String content,
+      {String? senderId}) async {
     try {
       final result = await _channel.invokeMethod('sendMessage', {
         'threadId': threadId,
         'content': content,
       });
-      return result as String;
+      final messageId = result as String;
+      _messageController.add(
+        ChatMessage(
+          id: messageId,
+          content: content,
+          senderId: senderId ?? '',
+          sentOn: DateTime.now().toUtc(),
+        ),
+      );
+      return messageId;
     } on PlatformException catch (e) {
       throw AcsChatException(
         code: e.code,
@@ -130,7 +149,7 @@ class AcsChatClient {
       });
       final List<dynamic> messageList = result as List<dynamic>;
       return messageList
-          .map((m) => ChatMessage.fromMap(Map<String, dynamic>.from(m)))
+          .map((m) => ChatMessage.fromMapSafe(Map<String, dynamic>.from(m)))
           .toList();
     } on PlatformException catch (e) {
       throw AcsChatException(
@@ -144,13 +163,21 @@ class AcsChatClient {
   /// Sends a typing indicator notification
   ///
   /// [threadId] is the ID of the thread to send the typing indicator to
+  /// [senderId] optionally identifies the local user emitting the indicator
   ///
   /// Throws an [AcsChatException] if sending fails
-  Future<void> sendTypingNotification(String threadId) async {
+  Future<void> sendTypingNotification(String threadId,
+      {String? senderId}) async {
     try {
       await _channel.invokeMethod('sendTypingNotification', {
         'threadId': threadId,
       });
+      _typingController.add(
+        TypingIndicator(
+          threadId: threadId,
+          userId: senderId ?? '',
+        ),
+      );
     } on PlatformException catch (e) {
       throw AcsChatException(
         code: e.code,
@@ -224,12 +251,22 @@ class ChatMessage {
   });
 
   /// Creates a [ChatMessage] from a map
-  factory ChatMessage.fromMap(Map<String, dynamic> map) {
+  factory ChatMessage.fromMap(Map<String, dynamic> map) =>
+      ChatMessage.fromMapSafe(map);
+
+  /// Creates a [ChatMessage] from a map while tolerating missing timestamps.
+  factory ChatMessage.fromMapSafe(Map<String, dynamic> map) {
+    final sentOnValue = map['sentOn'];
+    DateTime? sentOn;
+    if (sentOnValue is String && sentOnValue.isNotEmpty) {
+      sentOn = DateTime.tryParse(sentOnValue);
+    }
+
     return ChatMessage(
-      id: map['id'] as String,
-      content: map['content'] as String,
-      senderId: map['senderId'] as String,
-      sentOn: DateTime.parse(map['sentOn'] as String),
+      id: map['id'] as String? ?? '',
+      content: map['content'] as String? ?? '',
+      senderId: map['senderId'] as String? ?? '',
+      sentOn: sentOn ?? DateTime.fromMillisecondsSinceEpoch(0),
     );
   }
 

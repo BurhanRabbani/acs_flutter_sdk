@@ -1,15 +1,14 @@
 /// Azure Communication Services Flutter SDK
 ///
-/// A comprehensive Flutter plugin that provides a wrapper for Microsoft Azure
-/// Communication Services (ACS), enabling voice/video calling, chat, SMS, and
-/// identity management capabilities in Flutter applications.
+/// A Flutter plugin that wraps Microsoft Azure Communication Services (ACS),
+/// providing token-based access to calling and chat capabilities from Dart code.
 ///
 /// ## Features
 ///
-/// - **Identity Management**: Create users and manage access tokens
-/// - **Voice & Video Calling**: Make and receive voice and video calls
-/// - **Chat**: Send and receive messages in chat threads
-/// - **Real-time Notifications**: Receive typing indicators and message notifications
+/// - **Identity helpers** for development-time initialization (production flows remain server-side)
+/// - **Audio calling controls**: start, join, mute, unmute, and hang up calls
+/// - **Chat thread APIs**: create/join threads, send messages, list history
+/// - **Cross-platform** support targeting Android API 24+ and iOS 13+
 ///
 /// ## Getting Started
 ///
@@ -19,7 +18,7 @@
 ///
 /// ```yaml
 /// dependencies:
-///   acs_flutter_sdk: ^0.1.0
+///   acs_flutter_sdk: ^0.1.1
 /// ```
 ///
 /// ### Platform Setup
@@ -78,6 +77,7 @@ import 'src/chat/acs_chat.dart';
 import 'src/identity/acs_identity.dart';
 
 export 'src/calling/acs_calling.dart';
+export 'src/calling/video_views.dart';
 export 'src/chat/acs_chat.dart';
 // Export public APIs
 export 'src/identity/acs_identity.dart';
@@ -98,14 +98,14 @@ class AcsFlutterSdk {
     return AcsIdentityClient(_channel);
   }
 
-  /// Creates a new calling client for voice and video calls
+  /// Creates a new calling client for ACS calls (audio supported in v0.1.1)
   ///
   /// Returns an [AcsCallClient] instance
   AcsCallClient createCallClient() {
     return AcsCallClient(_channel);
   }
 
-  /// Creates a new chat client for messaging
+  /// Creates a new chat client for messaging (requires ACS endpoint during initialization)
   ///
   /// Returns an [AcsChatClient] instance
   AcsChatClient createChatClient() {

@@ -4,15 +4,15 @@
 #
 Pod::Spec.new do |s|
   s.name             = 'acs_flutter_sdk'
-  s.version          = '0.1.0'
+  s.version          = '0.1.1'
   s.summary          = 'Flutter plugin for Microsoft Azure Communication Services'
   s.description      = <<-DESC
 A comprehensive Flutter plugin that provides a wrapper for Microsoft Azure Communication Services (ACS),
 enabling voice/video calling, chat, SMS, and identity management capabilities in Flutter applications.
                        DESC
-  s.homepage         = 'https://github.com/yourusername/acs_flutter_sdk'
+  s.homepage         = 'https://github.com/BurhanRabbani/acs_flutter_sdk'
   s.license          = { :file => '../LICENSE' }
-  s.author           = { 'Your Name' => 'your.email@example.com' }
+  s.author           = { 'Burhan Rabbani' => 'burhanrabbani@users.noreply.github.com' }
   s.source           = { :path => '.' }
   s.source_files = 'Classes/**/*'
   s.dependency 'Flutter'

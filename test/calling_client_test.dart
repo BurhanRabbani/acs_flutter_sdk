@@ -35,6 +35,10 @@ void main() {
           return null;
         case 'stopVideo':
           return null;
+        case 'requestPermissions':
+          return null;
+        case 'switchCamera':
+          return null;
         default:
           throw PlatformException(code: 'NOT_IMPLEMENTED');
       }
@@ -164,6 +168,20 @@ void main() {
 
       expect(log, hasLength(1));
       expect(log[0].method, 'stopVideo');
+    });
+
+    test('requestPermissions calls platform method', () async {
+      await client.requestPermissions();
+
+      expect(log, hasLength(1));
+      expect(log[0].method, 'requestPermissions');
+    });
+
+    test('switchCamera calls platform method', () async {
+      await client.switchCamera();
+
+      expect(log, hasLength(1));
+      expect(log[0].method, 'switchCamera');
     });
   });
 

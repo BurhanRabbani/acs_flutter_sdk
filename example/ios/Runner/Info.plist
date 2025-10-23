@@ -45,5 +45,9 @@
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>Camera access is required to start or join video calls.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Microphone access is required to participate in ACS calls.</string>
 </dict>
 </plist>

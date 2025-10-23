@@ -1,6 +1,6 @@
 name: acs_flutter_sdk
 description: Flutter plugin for Microsoft Azure Communication Services (ACS). Provides voice/video calling, chat, and identity management capabilities.
-version: 0.1.0
+version: 0.1.1
 homepage: https://github.com/BurhanRabbani/acs_flutter_sdk
 repository: https://github.com/BurhanRabbani/acs_flutter_sdk
 issue_tracker: https://github.com/BurhanRabbani/acs_flutter_sdk/issues
@@ -45,7 +45,7 @@ flutter:
   plugin:
     platforms:
       android:
-        package: com.example.acs_flutter_sdk
+        package: com.burhanrabbani.acs_flutter_sdk
         pluginClass: AcsFlutterSdkPlugin
       ios:
         pluginClass: AcsFlutterSdkPlugin

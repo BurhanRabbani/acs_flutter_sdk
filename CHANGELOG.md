@@ -1,3 +1,12 @@
+## 0.1.1
+
+* Fix platform channel payload mismatches for calling and chat responses
+* Require chat endpoint during initialization and harden message parsing
+* Update Android/iOS plugin package metadata and example app permissions
+* Refresh documentation to clarify identity requirements and remove unsupported features
+* Prepare build scripts and podspec for publishing under the new namespace
+* Add Android video support (local preview, remote rendering, camera switching) and runtime permission helper
+
 ## 0.1.0
 
 * Initial release of Azure Communication Services Flutter SDK

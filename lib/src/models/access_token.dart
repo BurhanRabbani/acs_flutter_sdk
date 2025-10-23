@@ -36,7 +36,7 @@ class AccessToken {
 
   @override
   String toString() =>
-      'AccessToken(token: ${token.substring(0, 10)}..., expiresOn: $expiresOn)';
+      'AccessToken(token: ${token.length > 10 ? token.substring(0, 10) : token}..., expiresOn: $expiresOn)';
 
   @override
   bool operator ==(Object other) {

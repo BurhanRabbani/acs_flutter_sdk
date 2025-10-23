@@ -17,6 +17,19 @@ class AcsCallClient {
   /// Stream of call state changes
   Stream<CallState> get callStateStream => _callStateController.stream;
 
+  /// Requests microphone and camera permissions on the host platform.
+  Future<void> requestPermissions() async {
+    try {
+      await _channel.invokeMethod('requestPermissions');
+    } on PlatformException catch (e) {
+      throw AcsCallingException(
+        code: e.code,
+        message: e.message ?? 'Failed to request permissions',
+        details: e.details,
+      );
+    }
+  }
+
   /// Initializes the calling client with an access token
   ///
   /// [accessToken] is the Azure Communication Services access token
@@ -132,7 +145,8 @@ class AcsCallClient {
 
   /// Starts the local video
   ///
-  /// Throws an [AcsCallingException] if starting video fails
+  /// Throws an [AcsCallingException] if starting video fails. The current
+  /// release returns a `NOT_IMPLEMENTED` error until local video support is added.
   Future<void> startVideo() async {
     try {
       await _channel.invokeMethod('startVideo');
@@ -147,7 +161,8 @@ class AcsCallClient {
 
   /// Stops the local video
   ///
-  /// Throws an [AcsCallingException] if stopping video fails
+  /// Throws an [AcsCallingException] if stopping video fails. The current
+  /// release returns a `NOT_IMPLEMENTED` error until local video support is added.
   Future<void> stopVideo() async {
     try {
       await _channel.invokeMethod('stopVideo');
@@ -155,6 +170,19 @@ class AcsCallClient {
       throw AcsCallingException(
         code: e.code,
         message: e.message ?? 'Failed to stop video',
+        details: e.details,
+      );
+    }
+  }
+
+  /// Switches the active camera source when local video is enabled.
+  Future<void> switchCamera() async {
+    try {
+      await _channel.invokeMethod('switchCamera');
+    } on PlatformException catch (e) {
+      throw AcsCallingException(
+        code: e.code,
+        message: e.message ?? 'Failed to switch camera',
         details: e.details,
       );
     }
