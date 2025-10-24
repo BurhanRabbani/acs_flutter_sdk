@@ -35,7 +35,8 @@ class AcsChatClient {
   /// [endpoint] is the Azure Communication Services endpoint, e.g. `https://<RESOURCE>.communication.azure.com`
   ///
   /// Throws an [AcsChatException] if initialization fails
-  Future<void> initialize(String accessToken, {required String endpoint}) async {
+  Future<void> initialize(String accessToken,
+      {required String endpoint}) async {
     try {
       await _channel.invokeMethod('initializeChat', {
         'accessToken': accessToken,

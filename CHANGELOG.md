@@ -1,3 +1,8 @@
+## 0.1.3
+
+* Fix code formatting to achieve perfect 160/160 pana score
+* Improve pub.dev package quality metrics
+
 ## 0.1.2
 
 * Add `joinTeamsMeeting` APIs on Dart, Android, and iOS bridges

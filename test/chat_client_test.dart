@@ -136,8 +136,8 @@ void main() {
         () async {
       final messageFuture =
           client.messageStream.first.timeout(const Duration(milliseconds: 100));
-      final messageId =
-          await client.sendMessage('thread-123', 'Hello, World!', senderId: 'user-1');
+      final messageId = await client.sendMessage('thread-123', 'Hello, World!',
+          senderId: 'user-1');
 
       expect(log, hasLength(1));
       expect(log[0].method, 'sendMessage');
@@ -174,8 +174,7 @@ void main() {
 
     test('sendTypingNotification calls platform method with threadId',
         () async {
-      final typingFuture = client.typingIndicatorStream
-          .first
+      final typingFuture = client.typingIndicatorStream.first
           .timeout(const Duration(milliseconds: 100));
       await client.sendTypingNotification('thread-123', senderId: 'user-1');
 
