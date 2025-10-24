@@ -1,7 +1,9 @@
 ## 0.1.3
 
-* Fix code formatting to achieve perfect 160/160 pana score
-* Improve pub.dev package quality metrics
+* Fix Android compilation errors for Azure Chat SDK 2.0.3 API compatibility
+* Update Android plugin to use correct Azure SDK method signatures
+* Fix manifest merger conflicts and resource packaging issues
+* Resolve Kotlin compilation errors in calling and chat modules
 
 ## 0.1.2
 

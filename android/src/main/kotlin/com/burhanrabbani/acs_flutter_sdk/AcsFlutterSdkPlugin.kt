@@ -12,10 +12,11 @@ import com.azure.android.communication.calling.*
 import com.azure.android.communication.calling.TeamsMeetingLinkLocator
 import com.azure.android.communication.chat.ChatClient
 import com.azure.android.communication.chat.ChatClientBuilder
-import com.azure.android.communication.chat.ChatParticipant
 import com.azure.android.communication.chat.ChatThreadClient
-import com.azure.android.communication.chat.CreateChatThreadOptions
-import com.azure.android.communication.chat.ListChatMessagesOptions
+import com.azure.android.communication.chat.models.CreateChatThreadOptions
+import com.azure.android.communication.chat.models.SendChatMessageOptions
+import com.azure.android.communication.chat.models.ListChatMessagesOptions
+import com.azure.android.communication.chat.models.ChatParticipant
 import com.azure.android.communication.common.CommunicationIdentifier
 import com.azure.android.communication.common.CommunicationTokenCredential
 import com.azure.android.communication.common.CommunicationUserIdentifier
@@ -185,7 +186,7 @@ class AcsFlutterSdkPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
                     }
                     callAgent = agent
                     try {
-                        deviceManager = callClient!!.deviceManager.get()
+                        deviceManager = callClient!!.getDeviceManager(context).get()
                     } catch (e: Exception) {
                         // Device manager acquisition failure is non-fatal for audio-only scenarios.
                     }
@@ -334,7 +335,7 @@ class AcsFlutterSdkPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
         }
         executor.execute {
             try {
-                activeCall.muteOutgoingAudio().whenComplete { _, error ->
+                activeCall.muteOutgoingAudio(context).whenComplete { _, error ->
                     if (error != null) {
                         runOnMainThread { result.error("MUTE_FAILED", error.message, null) }
                     } else {
@@ -355,7 +356,7 @@ class AcsFlutterSdkPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
         }
         executor.execute {
             try {
-                activeCall.unmuteOutgoingAudio().whenComplete { _, error ->
+                activeCall.unmuteOutgoingAudio(context).whenComplete { _, error ->
                     if (error != null) {
                         runOnMainThread { result.error("UNMUTE_FAILED", error.message, null) }
                     } else {
@@ -381,7 +382,7 @@ class AcsFlutterSdkPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
                 viewManager?.showLocalPreview(context, stream)
                 val activeCall = call
                 if (activeCall != null) {
-                    activeCall.startVideo(stream).whenComplete { _, error ->
+                    activeCall.startVideo(context, stream).whenComplete { _, error ->
                         if (error != null) {
                             runOnMainThread { result.error("VIDEO_START_FAILED", error.message, null) }
                         } else {
@@ -403,7 +404,7 @@ class AcsFlutterSdkPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
                 val stream = localVideoStream
                 val activeCall = call
                 if (stream != null && activeCall != null) {
-                    activeCall.stopVideo(stream).whenComplete { _, error ->
+                    activeCall.stopVideo(context, stream).whenComplete { _, error ->
                         if (error != null) {
                             runOnMainThread { result.error("VIDEO_STOP_FAILED", error.message, null) }
                         } else {
@@ -544,22 +545,29 @@ class AcsFlutterSdkPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
                     return@execute
                 }
 
-                val futures = participantsToRemove.map { (_, participant) ->
-                    activeCall.removeParticipant(participant)
+                // Remove participants sequentially
+                var removedCount = 0
+                var lastError: Throwable? = null
+
+                for ((_, participant) in participantsToRemove) {
+                    try {
+                        activeCall.removeParticipant(participant).get()
+                        removedCount++
+                    } catch (e: Exception) {
+                        lastError = e
+                    }
                 }
 
-                CompletableFuture.allOf(*futures.toTypedArray()).whenComplete { _, error ->
-                    if (error != null) {
-                        runOnMainThread { result.error("REMOVE_PARTICIPANT_FAILED", error.message, null) }
-                    } else {
-                        runOnMainThread {
-                            result.success(
-                                mapOf(
-                                    "removed" to participantsToRemove.size,
-                                    "missing" to missing
-                                )
+                if (lastError != null && removedCount == 0) {
+                    runOnMainThread { result.error("REMOVE_PARTICIPANT_FAILED", lastError.message, null) }
+                } else {
+                    runOnMainThread {
+                        result.success(
+                            mapOf(
+                                "removed" to removedCount,
+                                "missing" to missing
                             )
-                        }
+                        )
                     }
                 }
             } catch (e: Exception) {
@@ -657,7 +665,7 @@ class AcsFlutterSdkPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
     private fun ensureDeviceManager(): DeviceManager? {
         if (deviceManager != null) return deviceManager
         return try {
-            val dm = callClient?.deviceManager?.get()
+            val dm = callClient?.getDeviceManager(context)?.get()
             deviceManager = dm
             dm
         } catch (e: Exception) {
@@ -699,19 +707,22 @@ class AcsFlutterSdkPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
         }
         val participants = call.argument<List<String>>("participants") ?: emptyList()
         try {
-            val options = CreateChatThreadOptions().setTopic(topic)
-            participants.forEach { id ->
-                val participant = ChatParticipant()
-                participant.communicationIdentifier = CommunicationUserIdentifier(id)
-                options.addParticipant(participant)
+            // Azure Chat SDK 2.0.3 API with models package
+            val options = CreateChatThreadOptions()
+                .setTopic(topic)
+            if (participants.isNotEmpty()) {
+                val chatParticipants = participants.map { id ->
+                    ChatParticipant()
+                        .setCommunicationIdentifier(CommunicationUserIdentifier(id))
+                }
+                options.setParticipants(chatParticipants)
             }
             val response = client.createChatThread(options)
-            val chatThread = response?.chatThread
-            if (chatThread != null) {
+            if (response != null) {
                 result.success(
                     mapOf(
-                        "id" to chatThread.id,
-                        "topic" to (chatThread.topic ?: "")
+                        "id" to (response.chatThreadProperties?.id ?: ""),
+                        "topic" to (response.chatThreadProperties?.topic ?: topic)
                     )
                 )
             } else {
@@ -755,11 +766,12 @@ class AcsFlutterSdkPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
         }
         try {
             val threadClient = client.getChatThreadClient(threadId)
-            val options = com.azure.android.communication.chat.SendChatMessageOptions()
+            // Azure Chat SDK 2.0.3 API with models package
+            val options = SendChatMessageOptions()
                 .setContent(content)
             val response = threadClient.sendMessage(options)
             if (response != null) {
-                result.success(response.id)
+                result.success(response.id ?: "")
             } else {
                 result.error("SEND_MESSAGE_FAILED", "Failed to send message", null)
             }
@@ -782,20 +794,22 @@ class AcsFlutterSdkPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
         try {
             val threadClient = client.getChatThreadClient(threadId)
             val maxMessages = call.argument<Int>("maxMessages") ?: 20
-            val options = ListChatMessagesOptions().setMaxPageSize(maxMessages)
+            // Azure Chat SDK 2.0.3 API with models package
+            val options = ListChatMessagesOptions()
+                .setMaxPageSize(maxMessages)
             val paged = threadClient.listMessages(options, null)
             val messages = mutableListOf<Map<String, Any>>()
-            paged.iterableByPage().forEach { page ->
-                page.elements.forEach { message ->
-                    messages.add(
-                        mapOf(
-                            "id" to (message.id ?: ""),
-                            "content" to (message.content?.message ?: ""),
-                            "senderId" to (message.senderCommunicationIdentifier?.rawId ?: ""),
-                            "sentOn" to (message.createdOn?.toString() ?: "")
-                        )
+            // Iterate through the paged results
+            for (message in paged) {
+                messages.add(
+                    mapOf(
+                        "id" to (message.id ?: ""),
+                        "content" to (message.content?.message ?: ""),
+                        "senderId" to (message.senderCommunicationIdentifier?.rawId ?: ""),
+                        "sentOn" to (message.createdOn?.toString() ?: "")
                     )
-                }
+                )
+                if (messages.size >= maxMessages) break
             }
             result.success(messages)
         } catch (e: Exception) {
