@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import '../models/remote_participant.dart';
 import '../models/device_info.dart';
+import '../models/audio_output.dart';
 import '../models/capabilities.dart';
 import '../models/incoming_call.dart';
 import '../models/call_features.dart';
@@ -745,6 +746,34 @@ class AcsCallClient {
   /// Mutes all remote participants (if permitted by service policy).
   Future<void> muteAllRemoteParticipants() =>
       _invokeMethod<void>('muteAllRemoteParticipants');
+
+  /// Forces the in-call audio output to [target].
+  ///
+  /// [AudioOutput.auto] resumes automatic routing (loudspeaker by default,
+  /// external device when connected). Any other value pins the output until this
+  /// is called again or [AudioOutput.auto] is selected; if a pinned external
+  /// device disconnects, routing reverts to automatic. No-op without an active
+  /// call's audio session.
+  Future<void> setAudioRoute(AudioOutput target) =>
+      _invokeMethod<void>('setAudioRoute', {'target': target.name});
+
+  /// Returns the audio output currently in effect.
+  Future<AudioOutput> getAudioRoute() async {
+    final name = await _invokeMethod<String>('getAudioRoute');
+    return audioOutputFromName(name);
+  }
+
+  /// Returns the audio outputs that can be selected right now (always includes
+  /// [AudioOutput.auto] and [AudioOutput.speaker]; earpiece/bluetooth/wired appear
+  /// when present on the device).
+  Future<List<AudioOutput>> getAvailableAudioOutputs() async {
+    final names =
+        await _invokeMethod<List<dynamic>>('getAvailableAudioOutputs');
+    if (names == null) return const [AudioOutput.auto, AudioOutput.speaker];
+    return names
+        .map((name) => audioOutputFromName(name as String?))
+        .toList(growable: false);
+  }
 
   /// Admit the specified identifiers from the lobby.
   Future<void> admitLobbyParticipants(List<String> identifiers) =>

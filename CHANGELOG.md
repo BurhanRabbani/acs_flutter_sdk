@@ -1,3 +1,7 @@
+## 0.2.11
+
+* **Feature — dynamic audio-output API**: the calling client can now switch the in-call audio output at runtime via `setAudioRoute(AudioOutput target)`, read the current output with `getAudioRoute()`, and list selectable outputs with `getAvailableAudioOutputs()`. The new `AudioOutput` enum covers `auto`, `speaker`, `earpiece`, `bluetooth`, and `wiredHeadset`. `auto` (the default) keeps the existing behaviour — built-in loudspeaker, switching to a connected external device — while an explicit value is honoured until changed or reset to `auto`; if a selected external device disconnects, routing reverts to automatic. Implemented natively on Android (`AudioManager`) and iOS (`AVAudioSession`) with unit-tested routing logic.
+
 ## 0.2.10
 
 * **Fix — release renderers before detaching the call channel**: when a call screen closes, the SDK now asks the native side to tear down every video renderer and release the render manager *before* the method-call handler is detached, dispatched while the channel is still live. This prevents leaked renderers / a teardown crash when leaving a multi-participant call.

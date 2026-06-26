@@ -82,6 +82,7 @@ export 'src/models/access_token.dart';
 export 'src/models/communication_user.dart';
 export 'src/models/remote_participant.dart';
 export 'src/models/device_info.dart';
+export 'src/models/audio_output.dart';
 export 'src/models/capabilities.dart';
 export 'src/models/incoming_call.dart';
 export 'src/models/call_features.dart';

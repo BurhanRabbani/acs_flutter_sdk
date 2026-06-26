@@ -14,24 +14,24 @@ private func audioRouteDebugLog(_ message: @autoclosure () -> String) {
 /// Why this exists: the ACS calling SDK activates its own `AVAudioSession`
 /// configuration when a call connects, which defaults incoming audio to the
 /// built-in RECEIVER (the quiet earpiece). This manager re-asserts the desired
-/// policy for the duration of a call:
+/// route for the duration of a call.
 ///
-///   * No external device connected → route to the built-in LOUDSPEAKER.
-///   * An external device IS connected (Bluetooth / wired headset / USB / CarPlay
-///     / AirPlay) → use that device, never force the speaker.
+/// Two modes:
+///   * AUTO (default): no external device → built-in LOUDSPEAKER; an external
+///     device connected (Bluetooth / wired / USB / CarPlay / AirPlay) → use it.
+///   * MANUAL: the app picked an explicit target via [setRoute]; honoured until the
+///     app changes it or selects `auto`.
 ///
-/// It also re-evaluates on every route change, so plugging in headphones switches
-/// to them and unplugging reverts to the loudspeaker mid-call.
-///
-/// Lifecycle: [activate] on call-connected, [deactivate] on call-disconnected.
-/// [deactivate] restores the app's launch-time session config so the separate
-/// LiveKit/avatar audio path (which prefers `.videoChat`) is unaffected after a
-/// call. All work runs on the main thread.
+/// It re-evaluates on every route change. Lifecycle: [activate] on call-connected,
+/// [deactivate] on call-disconnected (restores the launch-time session config so
+/// the separate LiveKit/avatar path is unaffected). All work runs on the main thread.
 final class AudioRouteManager {
 
-    /// Whether routing is currently being managed (a call is active). Guards against
-    /// duplicate activate/deactivate and ignores route-change events outside a call.
+    /// Whether routing is currently being managed (a call is active).
     private var isActive = false
+
+    /// App-selected output (Dart `AudioOutput` name); `auto` means automatic policy.
+    private var manualTarget = "auto"
 
     /// The app configures this category/mode at launch for the LiveKit/avatar path;
     /// [deactivate] restores it so that path keeps hardware echo cancellation.
@@ -40,10 +40,11 @@ final class AudioRouteManager {
         .allowBluetooth, .allowBluetoothA2DP, .defaultToSpeaker,
     ]
 
-    /// Category options applied DURING a call: loudspeaker by default, but any
-    /// connected external device (Bluetooth / wired / AirPlay) takes over.
-    private static let callOptions: AVAudioSession.CategoryOptions = [
-        .defaultToSpeaker, .allowBluetooth, .allowBluetoothA2DP, .allowAirPlay,
+    /// Base category options applied DURING a call (Bluetooth / AirPlay allowed).
+    /// `.defaultToSpeaker` is added on top except when the manual target is the
+    /// earpiece, where it must be omitted so audio routes to the receiver.
+    private static let baseCallOptions: AVAudioSession.CategoryOptions = [
+        .allowBluetooth, .allowBluetoothA2DP, .allowAirPlay,
     ]
 
     /// Output port types that represent an EXTERNAL device the user explicitly
@@ -55,13 +56,65 @@ final class AudioRouteManager {
         .usbAudio, .carAudio, .airPlay, .lineOut, .HDMI,
     ]
 
+    /// Bluetooth output port types.
+    private static let bluetoothOutputs: Set<AVAudioSession.Port> = [
+        .bluetoothA2DP, .bluetoothHFP, .bluetoothLE,
+    ]
+
+    /// Wired output port types.
+    private static let wiredOutputs: Set<AVAudioSession.Port> = [
+        .headphones, .headsetMic, .usbAudio,
+    ]
+
     /// Pure routing decision: returns true when the call should be forced to the
     /// built-in LOUDSPEAKER — i.e. NONE of the current [outputPortTypes] is an
-    /// external device. When any external output is present this returns false so
-    /// the external device is used instead. Extracted so the policy is unit-testable
-    /// without a live `AVAudioSession`.
+    /// external device. Extracted so the policy is unit-testable without a live
+    /// `AVAudioSession`.
     static func shouldRouteToSpeaker(outputPortTypes: [AVAudioSession.Port]) -> Bool {
         return !outputPortTypes.contains { externalOutputs.contains($0) }
+    }
+
+    /// Pure helper: the selectable target names for the given output port types.
+    /// Always offers `auto`/`speaker`/`earpiece`; adds `bluetooth`/`wiredHeadset`
+    /// when such a device is present. Unit-testable without a live session.
+    static func availableTargets(outputPortTypes: [AVAudioSession.Port]) -> [String] {
+        var targets = ["auto", "speaker", "earpiece"]
+        if outputPortTypes.contains(where: { bluetoothOutputs.contains($0) }) {
+            targets.append("bluetooth")
+        }
+        if outputPortTypes.contains(where: { wiredOutputs.contains($0) }) {
+            targets.append("wiredHeadset")
+        }
+        return targets
+    }
+
+    /// Pure helper: the external target name (`bluetooth`/`wiredHeadset`) currently
+    /// in use, or `nil` when only built-ins are active.
+    static func externalTargetName(outputPortTypes: [AVAudioSession.Port]) -> String? {
+        if outputPortTypes.contains(where: { bluetoothOutputs.contains($0) }) { return "bluetooth" }
+        if outputPortTypes.contains(where: { wiredOutputs.contains($0) }) { return "wiredHeadset" }
+        return nil
+    }
+
+    /// Selects an explicit output by its Dart target name (`auto` / `speaker` /
+    /// `earpiece` / `bluetooth` / `wiredHeadset`); `auto` resumes automatic routing.
+    func setRoute(_ target: String?) {
+        dispatchPrecondition(condition: .onQueue(.main))
+        manualTarget = Self.normalize(target)
+        applyPreferredRoute()
+    }
+
+    /// The Dart target name of the output currently in effect.
+    func currentRoute() -> String {
+        if manualTarget != "auto" { return manualTarget }
+        let outputs = AVAudioSession.sharedInstance().currentRoute.outputs.map { $0.portType }
+        return Self.externalTargetName(outputPortTypes: outputs) ?? "speaker"
+    }
+
+    /// The Dart target names selectable right now.
+    func availableRoutes() -> [String] {
+        let outputs = AVAudioSession.sharedInstance().currentRoute.outputs.map { $0.portType }
+        return Self.availableTargets(outputPortTypes: outputs)
     }
 
     /// Begins managing the call audio route: configures the session for a call,
@@ -69,28 +122,17 @@ final class AudioRouteManager {
     func activate() {
         dispatchPrecondition(condition: .onQueue(.main))
         guard !isActive else {
-            // Already active (e.g. a connected→reconnecting→connected bounce). Just
-            // re-apply in case the SDK reset the route on the transition.
             applyPreferredRoute()
             return
         }
         isActive = true
-
-        let session = AVAudioSession.sharedInstance()
-        do {
-            // `.voiceChat` is the standard mode for a 1:1/group call; `.defaultToSpeaker`
-            // makes the loudspeaker (not the receiver) the default when no external
-            // route is present, while `.allowBluetooth*` lets headsets take over.
-            try session.setCategory(.playAndRecord, mode: .voiceChat, options: Self.callOptions)
-        } catch {
-            NSLog("[ACS][AudioRoute] setCategory(call) failed: %@", error.localizedDescription)
-        }
+        manualTarget = "auto"
 
         NotificationCenter.default.addObserver(
             self,
             selector: #selector(handleRouteChange(_:)),
             name: AVAudioSession.routeChangeNotification,
-            object: session
+            object: AVAudioSession.sharedInstance()
         )
 
         applyPreferredRoute()
@@ -102,6 +144,7 @@ final class AudioRouteManager {
         dispatchPrecondition(condition: .onQueue(.main))
         guard isActive else { return }
         isActive = false
+        manualTarget = "auto"
 
         NotificationCenter.default.removeObserver(
             self,
@@ -111,7 +154,6 @@ final class AudioRouteManager {
 
         let session = AVAudioSession.sharedInstance()
         do {
-            // Clear any speaker override and restore the launch config.
             try session.overrideOutputAudioPort(.none)
             try session.setCategory(.playAndRecord, mode: Self.restoreMode, options: Self.restoreOptions)
         } catch {
@@ -119,38 +161,61 @@ final class AudioRouteManager {
         }
     }
 
-    /// Re-evaluates and applies the output route: speaker when nothing external is
-    /// connected, otherwise the external device. Safe to call repeatedly.
+    /// Category options for the current target: the base call options, plus
+    /// `.defaultToSpeaker` unless the manual target is the earpiece (where the
+    /// receiver must be the default).
+    private func categoryOptionsForTarget() -> AVAudioSession.CategoryOptions {
+        if manualTarget == "earpiece" { return Self.baseCallOptions }
+        return Self.baseCallOptions.union(.defaultToSpeaker)
+    }
+
+    /// Re-asserts the call category then applies the output override for the current
+    /// target: `speaker`→`.speaker`; `earpiece`/external→`.none`; `auto`→speaker when
+    /// nothing external is connected, else `.none`.
     private func applyPreferredRoute() {
         dispatchPrecondition(condition: .onQueue(.main))
         guard isActive else { return }
         let session = AVAudioSession.sharedInstance()
-        let useSpeaker = Self.shouldRouteToSpeaker(
-            outputPortTypes: session.currentRoute.outputs.map { $0.portType }
-        )
         do {
-            // `.speaker` forces the loudspeaker over the receiver when only built-ins
-            // are present; `.none` lets the system honour the connected external device.
-            try session.overrideOutputAudioPort(useSpeaker ? .speaker : .none)
-            audioRouteDebugLog("[ACS][AudioRoute] applied route speaker=\(useSpeaker) outputs=\(session.currentRoute.outputs.map { $0.portType.rawValue })")
+            try session.setCategory(.playAndRecord, mode: .voiceChat, options: categoryOptionsForTarget())
+        } catch {
+            NSLog("[ACS][AudioRoute] setCategory(call) failed: %@", error.localizedDescription)
+        }
+
+        let override: AVAudioSession.PortOverride
+        switch manualTarget {
+        case "speaker":
+            override = .speaker
+        case "earpiece", "bluetooth", "wiredHeadset":
+            // `.none` honours the receiver (earpiece) or the connected external device.
+            override = .none
+        default:
+            let useSpeaker = Self.shouldRouteToSpeaker(
+                outputPortTypes: session.currentRoute.outputs.map { $0.portType }
+            )
+            override = useSpeaker ? .speaker : .none
+        }
+        do {
+            try session.overrideOutputAudioPort(override)
+            audioRouteDebugLog("[ACS][AudioRoute] applied target=\(manualTarget) override=\(override.rawValue)")
         } catch {
             NSLog("[ACS][AudioRoute] overrideOutputAudioPort failed: %@", error.localizedDescription)
         }
     }
 
-    /// Route-change handler: a device was connected/disconnected (or the system
-    /// re-routed), so re-apply the preferred route. The ACS SDK can also reset the
-    /// category on some transitions, so re-assert the call options first.
+    /// Route-change handler: re-apply the preferred route on connect/disconnect.
     @objc private func handleRouteChange(_ notification: Notification) {
-        // Notifications can arrive off the main thread; hop to main for session work.
         DispatchQueue.main.async { [weak self] in
             guard let self = self, self.isActive else { return }
-            let session = AVAudioSession.sharedInstance()
-            // Re-assert the call category options in case the SDK clobbered them.
-            if !session.categoryOptions.contains(.defaultToSpeaker) {
-                try? session.setCategory(.playAndRecord, mode: .voiceChat, options: Self.callOptions)
-            }
             self.applyPreferredRoute()
+        }
+    }
+
+    /// Normalizes an inbound target name to a known value, defaulting to `auto`.
+    private static func normalize(_ target: String?) -> String {
+        switch target {
+        case "speaker", "earpiece", "bluetooth", "wiredHeadset": return target!
+        default: return "auto"
         }
     }
 
