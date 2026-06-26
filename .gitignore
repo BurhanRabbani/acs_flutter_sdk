@@ -37,3 +37,22 @@ migrate_working_dir/
 
 # iOS Podfile.lock in example
 example/ios/Podfile.lock
+
+# Markdown
+*.md
+!README.md
+!**/README.md
+# Package docs that must ship in the published archive
+!CHANGELOG.md
+!ACS_CALLING_SDK_IMPLEMENTATION_GUIDE.md
+
+# PDF
+*.pdf
+
+# hidden files
+.*/
+# Keep CI workflows (checked in and shipped)
+!.github/
+
+# Editor/AI-tooling rule files (keep local, never commit)
+.clinerules-*

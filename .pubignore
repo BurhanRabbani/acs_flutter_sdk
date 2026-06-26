@@ -6,3 +6,6 @@ coverage/
 migrate_working_dir/
 pubspec.lock
 acs_flutter_sdk.iml
+# Editor/AI-tooling rule files — never ship in the published package
+.clinerules-*
+CLAUDE.md
