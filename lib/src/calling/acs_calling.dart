@@ -775,6 +775,45 @@ class AcsCallClient {
         .toList(growable: false);
   }
 
+  /// Like [getAvailableAudioOutputs], but each entry also carries the name the
+  /// operating system reports for that output, so an app can show a picker such
+  /// as "AirPods Pro" / "Galaxy Buds".
+  ///
+  /// Invariant: for the same device state the `type` values are exactly those of
+  /// [getAvailableAudioOutputs], in the same order (the platform builds both from
+  /// the same detection). [AudioOutput.auto] has a `null` name; other names may be
+  /// `null` when the platform reports none. Malformed entries (non-map, missing or
+  /// unrecognised `type`) are skipped so a bad payload never throws; a `null`
+  /// payload yields the same fallback as [getAvailableAudioOutputs] (auto and
+  /// speaker, no names).
+  Future<List<AudioOutputDevice>> getAvailableAudioOutputDevices() async {
+    final entries =
+        await _invokeMethod<List<dynamic>>('getAvailableAudioOutputDevices');
+    if (entries == null) {
+      return const [
+        AudioOutputDevice(type: AudioOutput.auto),
+        AudioOutputDevice(type: AudioOutput.speaker),
+      ];
+    }
+    final devices = <AudioOutputDevice>[];
+    for (final entry in entries) {
+      if (entry is! Map) continue;
+      final typeName = entry['type'];
+      // Unlike audioOutputFromName, skip unknown types: an unselectable entry
+      // must not masquerade as `auto` in a picker.
+      final type = AudioOutput.values
+          .where((value) => value.name == typeName)
+          .firstOrNull;
+      if (type == null) continue;
+      final name = entry['name'];
+      devices.add(AudioOutputDevice(
+        type: type,
+        name: name is String && name.isNotEmpty ? name : null,
+      ));
+    }
+    return devices;
+  }
+
   /// Admit the specified identifiers from the lobby.
   Future<void> admitLobbyParticipants(List<String> identifiers) =>
       _invokeMethod<void>(

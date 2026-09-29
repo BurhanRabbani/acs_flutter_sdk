@@ -117,6 +117,41 @@ final class AudioRouteManager {
         return Self.availableTargets(outputPortTypes: outputs)
     }
 
+    /// The selectable outputs with their OS-reported names, as dictionaries of
+    /// `type` (Dart target name) and `name` (`NSNull` when unknown).
+    ///
+    /// Invariant: the `type` values and their order equal [availableRoutes] for the
+    /// same device state, because both come from [availableTargets]. `auto` has no
+    /// name. Names are `AVAudioSessionPortDescription.portName` from the current
+    /// route's outputs; `earpiece` is only named while the receiver is the active
+    /// output (iOS does not expose an inactive built-in port's name).
+    func availableRouteDevices() -> [[String: Any]] {
+        let outputs = AVAudioSession.sharedInstance().currentRoute.outputs
+        let targets = Self.availableTargets(outputPortTypes: outputs.map { $0.portType })
+        return targets.map { target in
+            let name = Self.portName(forTarget: target, outputs: outputs)
+            return ["type": target, "name": name.map { $0 as Any } ?? NSNull()]
+        }
+    }
+
+    /// Pure helper: the name of the first of [outputs] that belongs to [target],
+    /// or `nil` for `auto` / when no matching output is active or the name is blank.
+    static func portName(
+        forTarget target: String,
+        outputs: [AVAudioSessionPortDescription]
+    ) -> String? {
+        let match: (AVAudioSessionPortDescription) -> Bool
+        switch target {
+        case "speaker": match = { $0.portType == .builtInSpeaker }
+        case "earpiece": match = { $0.portType == .builtInReceiver }
+        case "bluetooth": match = { bluetoothOutputs.contains($0.portType) }
+        case "wiredHeadset": match = { wiredOutputs.contains($0.portType) }
+        default: return nil
+        }
+        guard let name = outputs.first(where: match)?.portName, !name.isEmpty else { return nil }
+        return name
+    }
+
     /// Begins managing the call audio route: configures the session for a call,
     /// applies the preferred route, and starts observing route changes.
     func activate() {

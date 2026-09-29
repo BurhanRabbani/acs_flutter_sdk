@@ -31,3 +31,33 @@ AudioOutput audioOutputFromName(String? name) {
   }
   return AudioOutput.auto;
 }
+
+/// A selectable in-call audio output together with the name the operating
+/// system reports for it (for example "AirPods Pro" or "Galaxy Buds").
+///
+/// Returned by `AcsCallClient.getAvailableAudioOutputDevices`. Use [type] to
+/// pass to `setAudioRoute` and [name] to label a picker entry. Instances are
+/// immutable and compare by value.
+class AudioOutputDevice {
+  /// Creates an output device of [type] with an optional OS-reported [name].
+  const AudioOutputDevice({required this.type, this.name});
+
+  /// The routing destination; pass it to `setAudioRoute` to select this output.
+  final AudioOutput type;
+
+  /// The name reported by the operating system, or `null` when none is available
+  /// (always `null` for [AudioOutput.auto], which is not a physical device).
+  /// Built-in outputs may carry a generic name such as the phone model, so the
+  /// app decides how to display them.
+  final String? name;
+
+  @override
+  bool operator ==(Object other) =>
+      other is AudioOutputDevice && other.type == type && other.name == name;
+
+  @override
+  int get hashCode => Object.hash(type, name);
+
+  @override
+  String toString() => 'AudioOutputDevice(type: ${type.name}, name: $name)';
+}

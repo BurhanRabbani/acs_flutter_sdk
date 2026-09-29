@@ -123,6 +123,37 @@ class AudioRouteController(context: Context) {
             .map { AudioRoutePolicy.targetName(it) }
 
     /**
+     * The selectable outputs with their OS-reported names, as maps of
+     * `{type: <Dart target name>, name: <String?>}`.
+     *
+     * Invariant: the `type` values and their order equal [availableRoutes] for the
+     * same device state, because both come from [AudioRoutePolicy.availableTargets].
+     * `auto` has no name. For the others the name is `AudioDeviceInfo.productName`
+     * of the first connected output of that kind (blank -> null); built-in outputs
+     * report a generic name (often the phone model) that the app may ignore.
+     */
+    fun availableRouteDevices(): List<Map<String, String?>> {
+        val outputs = audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS)
+        return AudioRoutePolicy.availableTargets(outputs.map { it.type }.toSet()).map { target ->
+            val name = if (target == AudioRoutePolicy.AudioTarget.AUTO) {
+                null
+            } else {
+                // Match the concrete built-in speaker type: targetForType folds every
+                // unrecognised type (HDMI, telephony...) into SPEAKER.
+                outputs.firstOrNull {
+                    if (target == AudioRoutePolicy.AudioTarget.SPEAKER) {
+                        it.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER
+                    } else {
+                        targetForType(it.type) == target
+                    }
+                }
+                    ?.productName?.toString()?.takeIf { it.isNotBlank() }
+            }
+            mapOf("type" to AudioRoutePolicy.targetName(target), "name" to name)
+        }
+    }
+
+    /**
      * Applies the effective output route: the manual override when set and still
      * applicable, otherwise the automatic policy. Safe to call repeatedly.
      */

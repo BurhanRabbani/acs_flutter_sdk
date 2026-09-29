@@ -229,6 +229,13 @@ await callingClient.stopVideo();
 await callingClient.addParticipants(['user-id-3']);
 await callingClient.removeParticipants(['user-id-2']);
 
+// Choose the in-call audio output and list the available ones with their names
+final outputs = await callingClient.getAvailableAudioOutputDevices();
+for (final output in outputs) {
+  print('${output.type}: ${output.name}'); // e.g. AudioOutput.bluetooth: AirPods Pro
+}
+await callingClient.setAudioRoute(outputs.last.type);
+
 // End the call
 await callingClient.endCall();
 

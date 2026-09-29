@@ -441,6 +441,14 @@ class AcsFlutterSdkPlugin : FlutterPlugin, MethodCallHandler, ActivityAware, Act
                 "getAudioRoute" -> result.success(audioRouteController?.currentRoute() ?: "auto")
                 "getAvailableAudioOutputs" ->
                     result.success(audioRouteController?.availableRoutes() ?: listOf("auto", "speaker"))
+                "getAvailableAudioOutputDevices" ->
+                    result.success(
+                        audioRouteController?.availableRouteDevices()
+                            ?: listOf(
+                                mapOf("type" to "auto", "name" to null),
+                                mapOf("type" to "speaker", "name" to null),
+                            ),
+                    )
                 "admitLobbyParticipants" -> admitLobbyParticipants(call, result)
                 "admitAllFromLobby" -> admitAllFromLobby(result)
                 "rejectLobbyParticipant" -> rejectLobbyParticipant(call, result)

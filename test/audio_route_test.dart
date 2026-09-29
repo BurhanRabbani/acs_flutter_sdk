@@ -13,6 +13,7 @@ void main() {
   // Platform values the mock returns for the read APIs.
   String getAudioRouteReturn = 'speaker';
   List<String> availableReturn = <String>['auto', 'speaker', 'earpiece'];
+  Object? devicesReturn;
 
   late AcsCallClient client;
 
@@ -20,6 +21,7 @@ void main() {
     log.clear();
     getAudioRouteReturn = 'speaker';
     availableReturn = <String>['auto', 'speaker', 'earpiece'];
+    devicesReturn = null;
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(channel, (MethodCall call) async {
       log.add(call);
@@ -30,6 +32,8 @@ void main() {
           return getAudioRouteReturn;
         case 'getAvailableAudioOutputs':
           return availableReturn;
+        case 'getAvailableAudioOutputDevices':
+          return devicesReturn;
         default:
           return null;
       }
@@ -86,6 +90,69 @@ void main() {
       availableReturn = <String>['speaker', 'mystery'];
       final outputs = await client.getAvailableAudioOutputs();
       expect(outputs, <AudioOutput>[AudioOutput.speaker, AudioOutput.auto]);
+    });
+  });
+
+  group('getAvailableAudioOutputDevices', () {
+    test('maps type and name entries into AudioOutputDevice values', () async {
+      devicesReturn = <Map<String, Object?>>[
+        {'type': 'auto', 'name': null},
+        {'type': 'speaker', 'name': 'Pixel 8'},
+        {'type': 'bluetooth', 'name': 'AirPods Pro'},
+      ];
+      final devices = await client.getAvailableAudioOutputDevices();
+      expect(devices, const <AudioOutputDevice>[
+        AudioOutputDevice(type: AudioOutput.auto),
+        AudioOutputDevice(type: AudioOutput.speaker, name: 'Pixel 8'),
+        AudioOutputDevice(type: AudioOutput.bluetooth, name: 'AirPods Pro'),
+      ]);
+      expect(log.single.method, 'getAvailableAudioOutputDevices');
+    });
+
+    test('falls back to auto + speaker with null names on a null payload',
+        () async {
+      devicesReturn = null;
+      expect(await client.getAvailableAudioOutputDevices(), const [
+        AudioOutputDevice(type: AudioOutput.auto),
+        AudioOutputDevice(type: AudioOutput.speaker),
+      ]);
+    });
+
+    test('skips non-map entries and entries with unknown or missing type',
+        () async {
+      devicesReturn = <Object?>[
+        'speaker',
+        42,
+        null,
+        {'type': 'hologram', 'name': 'x'},
+        {'name': 'no type'},
+        {'type': 'earpiece', 'name': 'iPhone'},
+      ];
+      expect(await client.getAvailableAudioOutputDevices(), const [
+        AudioOutputDevice(type: AudioOutput.earpiece, name: 'iPhone'),
+      ]);
+    });
+
+    test('treats non-string and empty names as null', () async {
+      devicesReturn = <Object?>[
+        {'type': 'speaker', 'name': 7},
+        {'type': 'earpiece', 'name': ''},
+      ];
+      expect(await client.getAvailableAudioOutputDevices(), const [
+        AudioOutputDevice(type: AudioOutput.speaker),
+        AudioOutputDevice(type: AudioOutput.earpiece),
+      ]);
+    });
+  });
+
+  group('AudioOutputDevice', () {
+    test('has value equality and a readable toString', () {
+      const a = AudioOutputDevice(type: AudioOutput.bluetooth, name: 'Buds');
+      const b = AudioOutputDevice(type: AudioOutput.bluetooth, name: 'Buds');
+      expect(a, b);
+      expect(a.hashCode, b.hashCode);
+      expect(a, isNot(const AudioOutputDevice(type: AudioOutput.bluetooth)));
+      expect(a.toString(), contains('Buds'));
     });
   });
 

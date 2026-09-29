@@ -345,6 +345,13 @@ public class AcsFlutterSdkPlugin: NSObject, FlutterPlugin, CallDelegate, RemoteP
                 DispatchQueue.main.async { [weak self] in
                     result(self?.audioRouteManager.availableRoutes() ?? ["auto", "speaker"])
                 }
+            case "getAvailableAudioOutputDevices":
+                DispatchQueue.main.async { [weak self] in
+                    result(self?.audioRouteManager.availableRouteDevices() ?? [
+                        ["type": "auto", "name": NSNull()],
+                        ["type": "speaker", "name": NSNull()],
+                    ])
+                }
             case "muteAllRemoteParticipants":
                 muteAllRemoteParticipants(result: result)
             case "admitLobbyParticipants":

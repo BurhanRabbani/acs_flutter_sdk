@@ -1,3 +1,7 @@
+## 0.2.12 (unreleased)
+
+* **Feature — audio output device names**: new `AcsCallClient.getAvailableAudioOutputDevices()` returns `List<AudioOutputDevice>` (`type` plus the OS-reported `name`, e.g. "AirPods Pro"), so apps can label an output picker. It is additive: `getAvailableAudioOutputs()` and `setAudioRoute()` are unchanged, and the device list's types match `getAvailableAudioOutputs()` for the same device state. Names come from `AudioDeviceInfo.productName` on Android and `AVAudioSessionPortDescription.portName` on iOS; `auto` and outputs the platform does not name have a `null` name.
+
 ## 0.2.11
 
 * **Feature — dynamic audio-output API**: the calling client can now switch the in-call audio output at runtime via `setAudioRoute(AudioOutput target)`, read the current output with `getAudioRoute()`, and list selectable outputs with `getAvailableAudioOutputs()`. The new `AudioOutput` enum covers `auto`, `speaker`, `earpiece`, `bluetooth`, and `wiredHeadset`. `auto` (the default) keeps the existing behaviour — built-in loudspeaker, switching to a connected external device — while an explicit value is honoured until changed or reset to `auto`; if a selected external device disconnects, routing reverts to automatic. Implemented natively on Android (`AudioManager`) and iOS (`AVAudioSession`) with unit-tested routing logic.
