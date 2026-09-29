@@ -234,7 +234,13 @@ final outputs = await callingClient.getAvailableAudioOutputDevices();
 for (final output in outputs) {
   print('${output.type}: ${output.name}'); // e.g. AudioOutput.bluetooth: AirPods Pro
 }
-await callingClient.setAudioRoute(outputs.last.type);
+// Route to the first Bluetooth device, if one is connected
+final bluetooth = outputs
+    .where((output) => output.type == AudioOutput.bluetooth)
+    .firstOrNull;
+if (bluetooth != null) {
+  await callingClient.setAudioRoute(bluetooth.type);
+}
 
 // Change noise suppression while a call is active: 'off', 'auto', 'low' or 'high'
 await callingClient.setNoiseSuppressionMode('high');

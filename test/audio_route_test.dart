@@ -118,6 +118,14 @@ void main() {
       ]);
     });
 
+    test('falls back the same way on a non-List payload', () async {
+      devicesReturn = 'not a list';
+      expect(await client.getAvailableAudioOutputDevices(), const [
+        AudioOutputDevice(type: AudioOutput.auto),
+        AudioOutputDevice(type: AudioOutput.speaker),
+      ]);
+    });
+
     test('skips non-map entries and entries with unknown or missing type',
         () async {
       devicesReturn = <Object?>[
@@ -152,7 +160,7 @@ void main() {
       expect(a, b);
       expect(a.hashCode, b.hashCode);
       expect(a, isNot(const AudioOutputDevice(type: AudioOutput.bluetooth)));
-      expect(a.toString(), contains('Buds'));
+      expect(a.toString(), 'AudioOutputDevice(type: bluetooth, name: Buds)');
     });
   });
 

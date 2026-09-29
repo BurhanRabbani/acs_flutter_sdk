@@ -13,6 +13,9 @@ void main() {
 
   /// When true the mock behaves as if no call is active.
   bool noActiveCall = false;
+
+  /// When set, the mock fails with this code instead of succeeding.
+  String? failureCode;
   Object? modeReturn = 'auto';
 
   late AcsCallClient client;
@@ -20,6 +23,7 @@ void main() {
   setUp(() {
     log.clear();
     noActiveCall = false;
+    failureCode = null;
     modeReturn = 'auto';
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(channel, (MethodCall call) async {
@@ -27,6 +31,9 @@ void main() {
       if (noActiveCall) {
         throw PlatformException(
             code: 'NO_ACTIVE_CALL', message: 'No active call');
+      }
+      if (failureCode != null) {
+        throw PlatformException(code: failureCode!, message: 'sdk said no');
       }
       return call.method == 'getNoiseSuppressionMode' ? modeReturn : null;
     });
@@ -53,9 +60,22 @@ void main() {
       expect(log.single.arguments, {'mode': 'high'});
     });
 
-    test('rejects an unknown mode without calling the platform', () async {
-      expect(() => client.setNoiseSuppressionMode('max'), throwsArgumentError);
+    test('rejects unknown and empty modes via a failed Future, no channel call',
+        () async {
+      for (final bad in ['max', '']) {
+        await expectLater(
+            client.setNoiseSuppressionMode(bad), throwsArgumentError);
+      }
       expect(log, isEmpty);
+    });
+
+    test('propagates NOISE_SUPPRESSION_FAILED from the platform', () async {
+      failureCode = 'NOISE_SUPPRESSION_FAILED';
+      await expectLater(
+        client.setNoiseSuppressionMode('low'),
+        throwsA(isA<AcsCallingException>()
+            .having((e) => e.code, 'code', 'NOISE_SUPPRESSION_FAILED')),
+      );
     });
 
     test('throws AcsCallingException NO_ACTIVE_CALL without a call', () async {
@@ -73,6 +93,11 @@ void main() {
       modeReturn = 'high';
       expect(await client.getNoiseSuppressionMode(), 'high');
       expect(log.single.method, 'getNoiseSuppressionMode');
+    });
+
+    test('returns null for an unexpected value', () async {
+      modeReturn = 'ultra';
+      expect(await client.getNoiseSuppressionMode(), isNull);
     });
 
     test('returns null when the platform reports nothing', () async {

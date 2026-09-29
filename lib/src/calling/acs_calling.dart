@@ -779,17 +779,19 @@ class AcsCallClient {
   /// operating system reports for that output, so an app can show a picker such
   /// as "AirPods Pro" / "Galaxy Buds".
   ///
-  /// Invariant: for the same device state the `type` values are exactly those of
-  /// [getAvailableAudioOutputs], in the same order (the platform builds both from
-  /// the same detection). [AudioOutput.auto] has a `null` name; other names may be
-  /// `null` when the platform reports none. Malformed entries (non-map, missing or
-  /// unrecognised `type`) are skipped so a bad payload never throws; a `null`
-  /// payload yields the same fallback as [getAvailableAudioOutputs] (auto and
-  /// speaker, no names).
+  /// Normally, for the same device state, the `type` values match those of
+  /// [getAvailableAudioOutputs] in the same order (the platform builds both from
+  /// the same detection); each call is its own snapshot, and malformed entries
+  /// are skipped, so the lists can differ. [AudioOutput.auto] has a `null` name;
+  /// other names may be `null` when the platform reports none. When several
+  /// devices of one kind are connected, the reported name is that of one of them.
+  /// Entries that are not maps, or whose `type` is missing or unrecognised, are
+  /// skipped so a bad entry never throws. A `null` or non-list payload yields the
+  /// same fallback as [getAvailableAudioOutputs] (auto and speaker, no names).
   Future<List<AudioOutputDevice>> getAvailableAudioOutputDevices() async {
     final entries =
-        await _invokeMethod<List<dynamic>>('getAvailableAudioOutputDevices');
-    if (entries == null) {
+        await _invokeMethod<Object?>('getAvailableAudioOutputDevices');
+    if (entries is! List) {
       return const [
         AudioOutputDevice(type: AudioOutput.auto),
         AudioOutputDevice(type: AudioOutput.speaker),
@@ -816,31 +818,39 @@ class AcsCallClient {
 
   /// Changes the outgoing-audio noise suppression of the active call.
   ///
-  /// [mode] uses the same values as `joinTeamsMeeting(noiseSuppressionMode:)`:
-  /// `off`, `auto`, `low`, `high` (case-insensitive). Only noise suppression
-  /// changes; echo cancellation and music mode are left as they are.
+  /// [mode] accepts `off`, `auto`, `low`, `high` (case-insensitive), the same
+  /// values as `joinTeamsMeeting(noiseSuppressionMode:)`. Unlike that join-time
+  /// option, which ignores unknown values, this setter is strict. Only noise
+  /// suppression changes; echo cancellation and music mode are left as they are.
+  /// The setting applies to the current call only and is not persisted.
   ///
-  /// Throws [ArgumentError] for an unknown [mode] (nothing is sent), and
-  /// [AcsCallingException] with code `NO_ACTIVE_CALL` when no call is active
-  /// (never a silent no-op), or `NOISE_SUPPRESSION_FAILED` if the SDK rejects it.
-  Future<void> setNoiseSuppressionMode(String mode) {
+  /// The returned future fails with [ArgumentError] for an unknown or empty
+  /// [mode] (nothing is sent), and with [AcsCallingException] code
+  /// `NO_ACTIVE_CALL` when no call exists (never a silent no-op). On Android,
+  /// calling before the call is connected may fail with
+  /// `NOISE_SUPPRESSION_FAILED` if the SDK rejects the change.
+  Future<void> setNoiseSuppressionMode(String mode) async {
     final normalized = mode.toLowerCase();
     if (!_noiseSuppressionModes.contains(normalized)) {
       throw ArgumentError.value(
           mode, 'mode', 'must be one of $_noiseSuppressionModes');
     }
-    return _invokeMethod<void>('setNoiseSuppressionMode', {'mode': normalized});
+    await _invokeMethod<void>('setNoiseSuppressionMode', {'mode': normalized});
   }
 
-  /// Returns the noise suppression mode in effect on the active call (`off`,
-  /// `auto`, `low` or `high`), or `null` if the platform reports none.
+  /// Returns the noise suppression mode of the active call (`off`, `auto`, `low`
+  /// or `high`); `null` means unknown or unavailable (including an unexpected
+  /// platform value).
   ///
   /// Throws [AcsCallingException] with code `NO_ACTIVE_CALL` when no call is
   /// active.
-  Future<String?> getNoiseSuppressionMode() =>
-      _invokeMethod<String>('getNoiseSuppressionMode');
+  Future<String?> getNoiseSuppressionMode() async {
+    final mode = await _invokeMethod<String>('getNoiseSuppressionMode');
+    return _noiseSuppressionModes.contains(mode) ? mode : null;
+  }
 
-  /// Accepted noise suppression modes, shared with `joinTeamsMeeting`.
+  /// Values accepted by [setNoiseSuppressionMode] (also the values
+  /// `joinTeamsMeeting` recognises) and reported by [getNoiseSuppressionMode].
   static const _noiseSuppressionModes = ['off', 'auto', 'low', 'high'];
 
   /// Admit the specified identifiers from the lobby.

@@ -2241,12 +2241,15 @@ class AcsFlutterSdkPlugin : FlutterPlugin, MethodCallHandler, ActivityAware, Act
             result.error("INVALID_ARGUMENT", "mode must be one of off, auto, low, high", null)
             return
         }
+        // Do the SDK work inside try but reply after it, so a throw from
+        // result.success itself can never lead to a second reply.
         try {
             activeCall.liveOutgoingAudioFilters.setNoiseSuppressionMode(mode)
-            result.success(null)
         } catch (e: Exception) {
             result.error("NOISE_SUPPRESSION_FAILED", e.message, null)
+            return
         }
+        result.success(null)
     }
 
     /**
@@ -2260,11 +2263,14 @@ class AcsFlutterSdkPlugin : FlutterPlugin, MethodCallHandler, ActivityAware, Act
             result.error("NO_ACTIVE_CALL", "No active call", null)
             return
         }
-        try {
-            result.success(activeCall.liveOutgoingAudioFilters.noiseSuppressionMode?.name?.lowercase())
+        // Value computed inside try, reply outside: result can never be called twice.
+        val modeName = try {
+            activeCall.liveOutgoingAudioFilters.noiseSuppressionMode?.name?.lowercase()
         } catch (e: Exception) {
             result.error("NOISE_SUPPRESSION_FAILED", e.message, null)
+            return
         }
+        result.success(modeName)
     }
 
     private fun muteIncomingAudio(result: Result) {
