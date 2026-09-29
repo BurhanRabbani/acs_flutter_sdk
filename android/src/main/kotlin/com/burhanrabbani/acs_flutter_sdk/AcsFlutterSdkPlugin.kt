@@ -2087,12 +2087,15 @@ class AcsFlutterSdkPlugin : FlutterPlugin, MethodCallHandler, ActivityAware, Act
      * Replays the latest known diagnostics of the active call to a newly attached
      * listener as one change event per known diagnostic, in the live event shape.
      * Null flags and `UNKNOWN` qualities are skipped. No-op without an active
-     * diagnostics feature; SDK failures are logged, never thrown.
+     * diagnostics feature; SDK failures are logged, never thrown. Runs on the main thread.
      */
     private fun replayLatestDiagnostics() {
-        val feature = localUserDiagnosticsFeature ?: return
-        executor.execute {
+        // Read the snapshot on the main thread, in the same block that emits it, so a
+        // live change event cannot be overwritten by an older replayed value
+        // (emitDiagnosticsEvent runs inline when already on the main thread).
+        runOnMainThread {
             try {
+                val feature = localUserDiagnosticsFeature ?: return@runOnMainThread
                 val snapshot = serializeDiagnostics(feature)
                 for ((group, eventType) in listOf(
                     "network" to "networkDiagnosticChanged",

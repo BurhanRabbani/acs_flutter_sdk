@@ -336,7 +336,8 @@ class MediaStatisticsEvent {
 
   /// Converts a number (epoch ms) or ISO-8601 string to epoch ms; else `null`.
   static int? _epochMillis(dynamic value) {
-    if (value is num) return value.toInt();
+    // isFinite guard: NaN/Infinity make toInt() throw.
+    if (value is num) return value.isFinite ? value.toInt() : null;
     if (value is String) {
       return DateTime.tryParse(value)?.millisecondsSinceEpoch;
     }
@@ -377,7 +378,8 @@ class DiagnosticsEvent {
   }
 
   /// The diagnostic value for flag diagnostics; `null` for quality diagnostics
-  /// or an unusable payload. Reads `valueBool`, falling back to a boolean `value`.
+  /// or an unusable payload; `null` means unknown, not `false`. Reads `valueBool`,
+  /// falling back to a boolean `value`.
   bool? get valueBool {
     final valueBool = data['valueBool'];
     if (valueBool is bool) return valueBool;
@@ -386,7 +388,8 @@ class DiagnosticsEvent {
   }
 
   /// The value of a quality diagnostic as a lower-case string (`good`, `poor`,
-  /// `bad`, `unknown`); `null` for flag diagnostics or an unusable payload.
+  /// `bad`, `unknown`); `null` for flag diagnostics or an unusable payload, where
+  /// `null` means unknown, not a particular quality.
   /// Reads `valueQuality`, falling back to the lower-cased string `value`
   /// (Android sends upper-case, iOS lower-case, in `value`).
   String? get valueQuality {
@@ -398,6 +401,8 @@ class DiagnosticsEvent {
 
   /// Whether this is a flag-type diagnostic (true/false) rather than a quality
   /// one. Uses `isFlagDiagnostic` when present, else infers from a string `value`.
+  /// This says which kind of diagnostic it is; it is not the flag's value (see
+  /// [valueBool], where `null` means unknown, not `false`).
   bool get isFlagDiagnostic {
     final flag = data['isFlagDiagnostic'];
     if (flag is bool) return flag;

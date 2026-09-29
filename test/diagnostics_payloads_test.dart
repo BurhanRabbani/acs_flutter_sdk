@@ -39,6 +39,30 @@ void main() {
       expect(event.timestamp, 42);
     });
 
+    test('non-finite numbers do not throw and fall back', () {
+      for (final bad in [
+        double.nan,
+        double.infinity,
+        double.negativeInfinity
+      ]) {
+        expect(
+          MediaStatisticsEvent.fromMap({
+            'type': 'x',
+            'timestamp': 42,
+            'report': {'lastUpdated': bad},
+          }).timestamp,
+          42,
+        );
+        expect(
+          MediaStatisticsEvent.fromMap({
+            'type': 'x',
+            'report': {'lastUpdated': bad},
+          }).timestamp,
+          isNull,
+        );
+      }
+    });
+
     test('is null, never throws, when nothing is usable', () {
       expect(
         MediaStatisticsEvent.fromMap({
@@ -122,16 +146,18 @@ void main() {
       expect(event.isFlagDiagnostic, isTrue);
     });
 
-    test('snapshot carries both camera-frozen keys on both platforms', () {
-      for (final media in [
-        {'isCameraFrozen': true, 'isCameraFreeze': true},
-        {'isCameraFrozen': false, 'isCameraFreeze': false},
-      ]) {
-        final event = DiagnosticsEvent.fromMap(
-            {'type': 'diagnosticsSnapshot', 'media': media});
-        expect(event.mediaDiagnostics!['isCameraFrozen'],
-            event.mediaDiagnostics!['isCameraFreeze']);
-      }
+    test('iOS quality event with an unexpected value prefers valueQuality', () {
+      final event = DiagnosticsEvent.fromMap({
+        'type': 'networkDiagnosticChanged',
+        'name': 'networkSendQuality',
+        'value': 'ACSDiagnosticQuality(1)',
+        'diagnostic': 'networkSendQuality',
+        'isFlagDiagnostic': false,
+        'valueQuality': 'good',
+      });
+      expect(event.valueQuality, 'good');
+      expect(event.isFlagDiagnostic, isFalse);
+      expect(event.valueBool, isNull);
     });
   });
 }

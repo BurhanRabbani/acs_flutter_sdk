@@ -1,14 +1,14 @@
 ## 0.2.13
 
-Includes everything in 0.2.12 (audio output device names, in-call noise suppression); 0.2.12 was tagged but not published to pub.dev.
+Includes everything in 0.2.12 (audio output device names, in-call noise suppression): 0.2.12 was not released to pub.dev; its changes ship in 0.2.13.
 
-* **Fix — diagnostics and media-statistics payloads**. All changes are additive; no existing key, value type or casing changed except where noted.
-  * iOS media statistics now send `lastUpdated` as epoch milliseconds (an integer, as on Android) instead of an ISO-8601 string, which made `MediaStatisticsEvent.timestamp` throw a `TypeError`. `timestamp` now also tolerates numbers, ISO strings and falls back to `data['timestamp']`; it never throws.
-  * Diagnostics change events now also carry `diagnostic` (same as `name`), `isFlagDiagnostic`, `valueBool` (flag events) and a lower-case `valueQuality` (quality events), so the `DiagnosticsEvent` getters return real values. `name` and `value` are unchanged. The getters are tolerant of missing or wrongly typed fields (`valueBool` on a non-bool now returns `null` instead of throwing).
+* **Fix — diagnostics and media-statistics payloads**. Changes are additive except the two called out below (iOS `lastUpdated` type, iOS diagnostic `name`).
+  * **Type change (iOS):** media statistics `report.lastUpdated` is now epoch milliseconds (an integer, as on Android) instead of an ISO-8601 string, which made `MediaStatisticsEvent.timestamp` throw a `TypeError`. `timestamp` now also tolerates numbers, ISO strings and falls back to `data['timestamp']`; it never throws.
+  * Diagnostics change events now also carry `diagnostic` (same as `name`), `isFlagDiagnostic`, `valueBool` (flag events) and a lower-case `valueQuality` (quality events), so the `DiagnosticsEvent` getters return real values. Existing `name`/`value` keys stay (see the iOS `name` note below). The getters are tolerant of missing or wrongly typed fields (`valueBool` on a non-bool now returns `null` instead of throwing).
   * Diagnostics snapshots (`diagnosticsSnapshot`, `getLatestDiagnostics`) carry both `isCameraFrozen` and the legacy `isCameraFreeze` on Android and iOS (iOS previously had only `isCameraFreeze`).
   * The current diagnostics are now delivered when a listener attaches to the diagnostics stream, as one change event per known diagnostic (unknown flags and `unknown` qualities skipped). Previously the attach-time snapshot was dropped and a stable call emitted nothing.
-  * iOS diagnostic `name` values are now explicit literals identical to Android's.
-  * Documented units (bitrate in bps, jitter and freeze durations in ms, `packetsLostPerSecond` is a rate), that incoming audio statistics have no participant identifier, and that raw quality values keep each platform's casing (Android upper-case, iOS lower-case) while `valueQuality` is always lower-case.
+  * **iOS `name` may change:** diagnostic `name` values are now fixed literals identical to Android's (for example `isCameraFrozen`) instead of the string the SDK supplied. Consumers on iOS that matched the previous SDK-supplied `name` should re-check; `diagnostic` carries the same literal.
+  * Documented units (bitrate in bps, jitter and freeze durations in ms, `packetsLostPerSecond` is a rate), that incoming audio statistics have no participant identifier, and that raw quality values keep each platform's casing (Android upper-case, iOS lower-case) while `valueQuality` is always lower-case. Live iOS quality events keep their previous `value` form, whereas replayed events send a lower-case `value`; use `valueQuality` for a stable lower-case form.
 
 ## 0.2.12
 

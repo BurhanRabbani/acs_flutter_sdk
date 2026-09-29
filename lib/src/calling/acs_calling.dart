@@ -199,6 +199,15 @@ class AcsCallClient {
       _mediaStatisticsEventStream;
 
   /// Stream of diagnostics change events.
+  ///
+  /// When the first listener subscribes, the platform immediately replays the
+  /// current diagnostics of the active call as one change event per known
+  /// diagnostic (a stable call otherwise emits nothing). Details: the replay goes
+  /// to the first subscriber of this broadcast stream only, because the native
+  /// side is attached once; after all listeners cancel, the next subscription
+  /// replays again. It is a no-op if no call or diagnostics feature exists yet (the
+  /// attach-time `diagnosticsSnapshot` event covers that case), and diagnostics in
+  /// an `unknown` state are not replayed.
   Stream<DiagnosticsEvent> get diagnosticsEvents => _diagnosticsEventStream;
 
   Future<void> _handleNativeCallback(MethodCall call) async {
