@@ -1,5 +1,6 @@
 ## 0.2.12 (unreleased)
 
+* **Feature — change noise suppression during a call**: new `AcsCallClient.setNoiseSuppressionMode(String mode)` and `getNoiseSuppressionMode()` adjust the outgoing-audio noise suppression of the active call (`off`, `auto`, `low`, `high`, the same values `joinTeamsMeeting(noiseSuppressionMode:)` accepts). They use the SDK's live outgoing audio filters on Android and iOS, and change only noise suppression (echo cancellation and music mode are untouched). Without an active call they throw `AcsCallingException` with code `NO_ACTIVE_CALL`; an unknown mode throws `ArgumentError`.
 * **Feature — audio output device names**: new `AcsCallClient.getAvailableAudioOutputDevices()` returns `List<AudioOutputDevice>` (`type` plus the OS-reported `name`, e.g. "AirPods Pro"), so apps can label an output picker. It is additive: `getAvailableAudioOutputs()` and `setAudioRoute()` are unchanged, and the device list's types match `getAvailableAudioOutputs()` for the same device state. Names come from `AudioDeviceInfo.productName` on Android and `AVAudioSessionPortDescription.portName` on iOS; `auto` and outputs the platform does not name have a `null` name.
 
 ## 0.2.11

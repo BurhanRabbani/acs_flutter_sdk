@@ -236,6 +236,10 @@ for (final output in outputs) {
 }
 await callingClient.setAudioRoute(outputs.last.type);
 
+// Change noise suppression while a call is active: 'off', 'auto', 'low' or 'high'
+await callingClient.setNoiseSuppressionMode('high');
+final mode = await callingClient.getNoiseSuppressionMode(); // 'high'
+
 // End the call
 await callingClient.endCall();
 

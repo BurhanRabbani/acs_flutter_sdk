@@ -449,6 +449,8 @@ class AcsFlutterSdkPlugin : FlutterPlugin, MethodCallHandler, ActivityAware, Act
                                 mapOf("type" to "speaker", "name" to null),
                             ),
                     )
+                "setNoiseSuppressionMode" -> setNoiseSuppressionMode(call, result)
+                "getNoiseSuppressionMode" -> getNoiseSuppressionMode(result)
                 "admitLobbyParticipants" -> admitLobbyParticipants(call, result)
                 "admitAllFromLobby" -> admitAllFromLobby(result)
                 "rejectLobbyParticipant" -> rejectLobbyParticipant(call, result)
@@ -2212,6 +2214,56 @@ class AcsFlutterSdkPlugin : FlutterPlugin, MethodCallHandler, ActivityAware, Act
             } catch (e: Exception) {
                 runOnMainThread { result.error("VIDEO_EFFECT_ERROR", e.message, null) }
             }
+        }
+    }
+
+    /**
+     * Changes the active call's outgoing noise suppression via
+     * `Call.getLiveOutgoingAudioFilters()` (`off|auto|low|high`, case-insensitive).
+     *
+     * Only the noise-suppression mode is touched; echo cancellation and music mode
+     * keep their current values. Errors: `NO_ACTIVE_CALL` without a call,
+     * `INVALID_ARGUMENT` for an unknown mode, `NOISE_SUPPRESSION_FAILED` if the SDK throws.
+     */
+    private fun setNoiseSuppressionMode(call: MethodCall, result: Result) {
+        val activeCall = this.call
+        if (activeCall == null) {
+            result.error("NO_ACTIVE_CALL", "No active call", null)
+            return
+        }
+        val mode = when (call.argument<String>("mode")?.lowercase()) {
+            "off" -> NoiseSuppressionMode.OFF
+            "auto" -> NoiseSuppressionMode.AUTO
+            "low" -> NoiseSuppressionMode.LOW
+            "high" -> NoiseSuppressionMode.HIGH
+            else -> {
+                result.error("INVALID_ARGUMENT", "mode must be one of off, auto, low, high", null)
+                return
+            }
+        }
+        try {
+            activeCall.liveOutgoingAudioFilters.setNoiseSuppressionMode(mode)
+            result.success(null)
+        } catch (e: Exception) {
+            result.error("NOISE_SUPPRESSION_FAILED", e.message, null)
+        }
+    }
+
+    /**
+     * Returns the active call's current noise suppression mode as a lower-case
+     * name (`off|auto|low|high`), or null if the SDK reports none. Errors:
+     * `NO_ACTIVE_CALL` without a call, `NOISE_SUPPRESSION_FAILED` if the SDK throws.
+     */
+    private fun getNoiseSuppressionMode(result: Result) {
+        val activeCall = this.call
+        if (activeCall == null) {
+            result.error("NO_ACTIVE_CALL", "No active call", null)
+            return
+        }
+        try {
+            result.success(activeCall.liveOutgoingAudioFilters.noiseSuppressionMode?.name?.lowercase())
+        } catch (e: Exception) {
+            result.error("NOISE_SUPPRESSION_FAILED", e.message, null)
         }
     }
 

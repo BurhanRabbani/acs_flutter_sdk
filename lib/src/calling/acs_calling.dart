@@ -814,6 +814,35 @@ class AcsCallClient {
     return devices;
   }
 
+  /// Changes the outgoing-audio noise suppression of the active call.
+  ///
+  /// [mode] uses the same values as `joinTeamsMeeting(noiseSuppressionMode:)`:
+  /// `off`, `auto`, `low`, `high` (case-insensitive). Only noise suppression
+  /// changes; echo cancellation and music mode are left as they are.
+  ///
+  /// Throws [ArgumentError] for an unknown [mode] (nothing is sent), and
+  /// [AcsCallingException] with code `NO_ACTIVE_CALL` when no call is active
+  /// (never a silent no-op), or `NOISE_SUPPRESSION_FAILED` if the SDK rejects it.
+  Future<void> setNoiseSuppressionMode(String mode) {
+    final normalized = mode.toLowerCase();
+    if (!_noiseSuppressionModes.contains(normalized)) {
+      throw ArgumentError.value(
+          mode, 'mode', 'must be one of $_noiseSuppressionModes');
+    }
+    return _invokeMethod<void>('setNoiseSuppressionMode', {'mode': normalized});
+  }
+
+  /// Returns the noise suppression mode in effect on the active call (`off`,
+  /// `auto`, `low` or `high`), or `null` if the platform reports none.
+  ///
+  /// Throws [AcsCallingException] with code `NO_ACTIVE_CALL` when no call is
+  /// active.
+  Future<String?> getNoiseSuppressionMode() =>
+      _invokeMethod<String>('getNoiseSuppressionMode');
+
+  /// Accepted noise suppression modes, shared with `joinTeamsMeeting`.
+  static const _noiseSuppressionModes = ['off', 'auto', 'low', 'high'];
+
   /// Admit the specified identifiers from the lobby.
   Future<void> admitLobbyParticipants(List<String> identifiers) =>
       _invokeMethod<void>(

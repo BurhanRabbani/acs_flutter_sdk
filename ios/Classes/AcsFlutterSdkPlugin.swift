@@ -327,6 +327,10 @@ public class AcsFlutterSdkPlugin: NSObject, FlutterPlugin, CallDelegate, RemoteP
                 enableBackgroundReplacement(args: args, result: result)
             case "disableVideoEffects":
                 disableVideoEffects(result: result)
+            case "setNoiseSuppressionMode":
+                setNoiseSuppressionMode(args: args, result: result)
+            case "getNoiseSuppressionMode":
+                getNoiseSuppressionMode(result: result)
             case "muteIncomingAudio":
                 muteIncomingAudio(result: result)
             case "unmuteIncomingAudio":
@@ -3602,6 +3606,45 @@ extension AcsFlutterSdkPlugin {
         feature.disable(effect: activeEffect)
         activeVideoEffect = nil
         result(nil)
+    }
+
+    /// Changes the active call's outgoing noise suppression through
+    /// `Call.liveOutgoingAudioFilters.noiseSuppressionMode` (`off|auto|low|high`,
+    /// case-insensitive). Echo cancellation and music mode are left untouched.
+    /// Errors: `NO_ACTIVE_CALL` without a call, `INVALID_ARGUMENT` for an unknown mode.
+    private func setNoiseSuppressionMode(args: [String: Any], result: @escaping FlutterResult) {
+        guard let activeCall = call else {
+            result(FlutterError(code: "NO_ACTIVE_CALL", message: "No active call", details: nil))
+            return
+        }
+        let mode: NoiseSuppressionMode
+        switch (args["mode"] as? String)?.lowercased() {
+        case "off": mode = .off
+        case "auto": mode = .auto
+        case "low": mode = .low
+        case "high": mode = .high
+        default:
+            result(FlutterError(code: "INVALID_ARGUMENT", message: "mode must be one of off, auto, low, high", details: nil))
+            return
+        }
+        activeCall.liveOutgoingAudioFilters.noiseSuppressionMode = mode
+        result(nil)
+    }
+
+    /// Returns the active call's current noise suppression mode as a lower-case name
+    /// (`off|auto|low|high`). Errors: `NO_ACTIVE_CALL` without a call.
+    private func getNoiseSuppressionMode(result: @escaping FlutterResult) {
+        guard let activeCall = call else {
+            result(FlutterError(code: "NO_ACTIVE_CALL", message: "No active call", details: nil))
+            return
+        }
+        switch activeCall.liveOutgoingAudioFilters.noiseSuppressionMode {
+        case .off: result("off")
+        case .auto: result("auto")
+        case .low: result("low")
+        case .high: result("high")
+        @unknown default: result(nil)
+        }
     }
 
     private func muteIncomingAudio(result: @escaping FlutterResult) {
