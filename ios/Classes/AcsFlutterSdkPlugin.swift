@@ -203,6 +203,8 @@ public class AcsFlutterSdkPlugin: NSObject, FlutterPlugin, CallDelegate, RemoteP
         let diagnosticsChannel = FlutterEventChannel(name: "acs_flutter_sdk/diagnostics", binaryMessenger: registrar.messenger())
         diagnosticsChannel.setStreamHandler(EventSinkHandler { sink in
             instance.diagnosticsEventSink = sink
+            // Deliver the current state right away: stable calls emit no changes.
+            if sink != nil { instance.replayLatestDiagnostics() }
         })
         AcsUiLibraryPlugin.register(with: registrar)
         instance.channel = channel
@@ -1909,117 +1911,123 @@ public class AcsFlutterSdkPlugin: NSObject, FlutterPlugin, CallDelegate, RemoteP
         let network = diagnostics.networkDiagnostics
         network.events.onIsNetworkUnavailableChanged = { [weak self] args in
             self?.emitDiagnosticsEvent(type: "networkDiagnosticChanged", payload: [
-                "name": args.name,
+                "name": "isNetworkUnavailable",
                 "value": args.value
             ])
         }
         network.events.onIsNetworkRelaysUnreachableChanged = { [weak self] args in
             self?.emitDiagnosticsEvent(type: "networkDiagnosticChanged", payload: [
-                "name": args.name,
+                "name": "isNetworkRelaysUnreachable",
                 "value": args.value
             ])
         }
         network.events.onNetworkReconnectionQualityChanged = { [weak self] args in
-            self?.emitDiagnosticsEvent(type: "networkDiagnosticChanged", payload: [
-                "name": args.name,
-                "value": String(describing: args.value)
+            guard let self = self else { return }
+            self.emitDiagnosticsEvent(type: "networkDiagnosticChanged", payload: [
+                "name": "networkReconnectionQuality",
+                "value": String(describing: args.value),
+                "valueQuality": self.diagnosticQualityToString(args.value)
             ])
         }
         network.events.onNetworkReceiveQualityChanged = { [weak self] args in
-            self?.emitDiagnosticsEvent(type: "networkDiagnosticChanged", payload: [
-                "name": args.name,
-                "value": String(describing: args.value)
+            guard let self = self else { return }
+            self.emitDiagnosticsEvent(type: "networkDiagnosticChanged", payload: [
+                "name": "networkReceiveQuality",
+                "value": String(describing: args.value),
+                "valueQuality": self.diagnosticQualityToString(args.value)
             ])
         }
         network.events.onNetworkSendQualityChanged = { [weak self] args in
-            self?.emitDiagnosticsEvent(type: "networkDiagnosticChanged", payload: [
-                "name": args.name,
-                "value": String(describing: args.value)
+            guard let self = self else { return }
+            self.emitDiagnosticsEvent(type: "networkDiagnosticChanged", payload: [
+                "name": "networkSendQuality",
+                "value": String(describing: args.value),
+                "valueQuality": self.diagnosticQualityToString(args.value)
             ])
         }
 
         let media = diagnostics.mediaDiagnostics
         media.events.onIsSpeakerNotFunctioningChanged = { [weak self] args in
             self?.emitDiagnosticsEvent(type: "mediaDiagnosticChanged", payload: [
-                "name": args.name,
+                "name": "isSpeakerNotFunctioning",
                 "value": args.value
             ])
         }
         media.events.onIsSpeakerBusyChanged = { [weak self] args in
             self?.emitDiagnosticsEvent(type: "mediaDiagnosticChanged", payload: [
-                "name": args.name,
+                "name": "isSpeakerBusy",
                 "value": args.value
             ])
         }
         media.events.onIsSpeakerMutedChanged = { [weak self] args in
             self?.emitDiagnosticsEvent(type: "mediaDiagnosticChanged", payload: [
-                "name": args.name,
+                "name": "isSpeakerMuted",
                 "value": args.value
             ])
         }
         media.events.onIsSpeakerVolumeZeroChanged = { [weak self] args in
             self?.emitDiagnosticsEvent(type: "mediaDiagnosticChanged", payload: [
-                "name": args.name,
+                "name": "isSpeakerVolumeZero",
                 "value": args.value
             ])
         }
         media.events.onIsNoSpeakerDevicesAvailableChanged = { [weak self] args in
             self?.emitDiagnosticsEvent(type: "mediaDiagnosticChanged", payload: [
-                "name": args.name,
+                "name": "isNoSpeakerDevicesAvailable",
                 "value": args.value
             ])
         }
         media.events.onIsSpeakingWhileMicrophoneIsMutedChanged = { [weak self] args in
             self?.emitDiagnosticsEvent(type: "mediaDiagnosticChanged", payload: [
-                "name": args.name,
+                "name": "isSpeakingWhileMicrophoneIsMuted",
                 "value": args.value
             ])
         }
         media.events.onIsNoMicrophoneDevicesAvailableChanged = { [weak self] args in
             self?.emitDiagnosticsEvent(type: "mediaDiagnosticChanged", payload: [
-                "name": args.name,
+                "name": "isNoMicrophoneDevicesAvailable",
                 "value": args.value
             ])
         }
         media.events.onIsMicrophoneBusyChanged = { [weak self] args in
             self?.emitDiagnosticsEvent(type: "mediaDiagnosticChanged", payload: [
-                "name": args.name,
+                "name": "isMicrophoneBusy",
                 "value": args.value
             ])
         }
         media.events.onIsCameraFrozenChanged = { [weak self] args in
             self?.emitDiagnosticsEvent(type: "mediaDiagnosticChanged", payload: [
-                "name": args.name,
+                "name": "isCameraFrozen",
                 "value": args.value
             ])
         }
         media.events.onIsCameraStartFailedChanged = { [weak self] args in
             self?.emitDiagnosticsEvent(type: "mediaDiagnosticChanged", payload: [
-                "name": args.name,
+                "name": "isCameraStartFailed",
                 "value": args.value
             ])
         }
         media.events.onIsCameraStartTimedOutChanged = { [weak self] args in
             self?.emitDiagnosticsEvent(type: "mediaDiagnosticChanged", payload: [
-                "name": args.name,
+                "name": "isCameraStartTimedOut",
                 "value": args.value
             ])
         }
         media.events.onIsMicrophoneNotFunctioningChanged = { [weak self] args in
             self?.emitDiagnosticsEvent(type: "mediaDiagnosticChanged", payload: [
-                "name": args.name,
+                "name": "isMicrophoneNotFunctioning",
                 "value": args.value
             ])
         }
         media.events.onIsMicrophoneMutedUnexpectedlyChanged = { [weak self] args in
             self?.emitDiagnosticsEvent(type: "mediaDiagnosticChanged", payload: [
-                "name": args.name,
+                "name": "isMicrophoneMutedUnexpectedly",
                 "value": args.value
             ])
         }
         media.events.onIsCameraPermissionDeniedChanged = { [weak self] args in
             self?.emitDiagnosticsEvent(type: "mediaDiagnosticChanged", payload: [
-                "name": args.name,
+                "name": "isCameraPermissionDenied",
                 "value": args.value
             ])
         }
@@ -2720,8 +2728,48 @@ extension AcsFlutterSdkPlugin {
         guard let sink = diagnosticsEventSink else { return }
         var data = payload
         data["type"] = type
+        // Change events also carry the keys the Dart model reads: `diagnostic`
+        // (same as `name`), `isFlagDiagnostic`, and `valueBool` for flag events.
+        // `name`/`value` stay exactly as emitted before.
+        if type.hasSuffix("DiagnosticChanged"), let name = data["name"] as? String {
+            data["diagnostic"] = name
+            let isQuality = data["valueQuality"] != nil
+            data["isFlagDiagnostic"] = !isQuality
+            if let flag = data["value"] as? Bool { data["valueBool"] = flag }
+        }
         DispatchQueue.main.async {
             sink(data)
+        }
+    }
+
+    /// Replays the latest known diagnostics to a freshly attached listener as one
+    /// change event per known diagnostic, in the same shape as live change events.
+    ///
+    /// Why: a stable call never fires a change event, and the snapshot emitted at
+    /// attach time is dropped when no Dart listener exists yet. Unknown (nil) flags
+    /// and `unknown` qualities are skipped. No-op without an active call.
+    /// Note: the replayed quality `value` is the lower-case name, as in `valueQuality`.
+    func replayLatestDiagnostics() {
+        guard let feature = localUserDiagnosticsFeature else { return }
+        let snapshot = serializeDiagnostics(feature)
+        let groups: [(key: String, type: String)] = [
+            ("network", "networkDiagnosticChanged"),
+            ("media", "mediaDiagnosticChanged")
+        ]
+        for group in groups {
+            guard let values = snapshot[group.key] as? [String: Any] else { continue }
+            for (name, value) in values.sorted(by: { $0.key < $1.key }) {
+                // `lastUpdated` is metadata; `isCameraFreeze` is a legacy alias of
+                // `isCameraFrozen` and must not produce a second event.
+                if name == "lastUpdated" || name == "isCameraFreeze" { continue }
+                if let flag = value as? Bool {
+                    emitDiagnosticsEvent(type: group.type, payload: ["name": name, "value": flag])
+                } else if let quality = value as? String, quality != "unknown" {
+                    emitDiagnosticsEvent(type: group.type, payload: [
+                        "name": name, "value": quality, "valueQuality": quality
+                    ])
+                }
+            }
         }
     }
 
@@ -2793,7 +2841,8 @@ extension AcsFlutterSdkPlugin {
 
     private func serialize(mediaStatisticsReport report: MediaStatisticsReport) -> [String: Any] {
         return [
-            "lastUpdated": report.lastUpdated.iso8601String(),
+            // Epoch milliseconds, same as Android (was an ISO-8601 string).
+            "lastUpdated": Int64(report.lastUpdated.timeIntervalSince1970 * 1000),
             "outgoing": serialize(outgoingStatistics: report.outgoingStatistics),
             "incoming": serialize(incomingStatistics: report.incomingStatistics)
         ]
@@ -2955,6 +3004,9 @@ extension AcsFlutterSdkPlugin {
                 "isSpeakingWhileMicrophoneIsMuted": media.isSpeakingWhileMicrophoneIsMuted as Any,
                 "isNoMicrophoneDevicesAvailable": media.isNoMicrophoneDevicesAvailable as Any,
                 "isMicrophoneBusy": media.isMicrophoneBusy as Any,
+                // `isCameraFrozen` is the canonical key (matches events and Android);
+                // `isCameraFreeze` is kept so existing readers keep working.
+                "isCameraFrozen": media.isCameraFreeze as Any,
                 "isCameraFreeze": media.isCameraFreeze as Any,
                 "isCameraStartFailed": media.isCameraStartFailed as Any,
                 "isCameraStartTimedOut": media.isCameraStartTimedOut as Any,

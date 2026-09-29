@@ -82,15 +82,15 @@ void main() {
         expect(event.valueBool, isNull);
       });
 
-      test('throws when value is not a boolean', () {
+      test('returns null when value is not a boolean', () {
         final event = DiagnosticsEvent.fromMap({
           'type': 'networkDiagnostic',
           'diagnostic': 'networkQuality',
           'value': 'good', // String, not bool
         });
 
-        // SDK uses direct cast, so non-bool values throw TypeError
-        expect(() => event.valueBool, throwsA(isA<TypeError>()));
+        // Tolerant parsing: a non-bool value is a quality string, not a flag.
+        expect(event.valueBool, isNull);
       });
     });
 

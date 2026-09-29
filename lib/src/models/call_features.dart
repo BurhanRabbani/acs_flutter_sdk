@@ -183,6 +183,12 @@ class DataChannelEvent {
 /// Event emitted when media statistics reports arrive.
 ///
 /// Contains aggregated statistics about audio and video streams.
+///
+/// Units in the per-stream maps: bitrates are bits per second, jitter and
+/// freeze durations are milliseconds, and `packetsLostPerSecond` is a rate
+/// (packets lost per second), not a running total. Incoming audio statistics
+/// carry no participant identifier (a limitation of the underlying SDK), so
+/// they cannot be attributed to a specific remote participant.
 class MediaStatisticsEvent {
   /// The event type identifier
   final String type;
@@ -316,12 +322,25 @@ class MediaStatisticsEvent {
     return _toMapList(incoming['screenShare']);
   }
 
-  /// The timestamp when these statistics were collected
-  /// iOS SDK structure: data['report']['lastUpdated']
+  /// When these statistics were collected, in milliseconds since the epoch.
+  ///
+  /// Both platforms send epoch milliseconds in `report['lastUpdated']`. To stay
+  /// tolerant of older iOS builds that sent an ISO-8601 string, a numeric value is
+  /// taken as milliseconds, a string is parsed with [DateTime.tryParse], and any
+  /// other or unusable value falls back to `data['timestamp']`. Never throws;
+  /// `null` when nothing usable is present.
   int? get timestamp {
-    final report = _report;
-    if (report == null) return data['timestamp'] as int?;
-    return report['lastUpdated'] as int? ?? data['timestamp'] as int?;
+    final fromReport = _epochMillis(_report?['lastUpdated']);
+    return fromReport ?? _epochMillis(data['timestamp']);
+  }
+
+  /// Converts a number (epoch ms) or ISO-8601 string to epoch ms; else `null`.
+  static int? _epochMillis(dynamic value) {
+    if (value is num) return value.toInt();
+    if (value is String) {
+      return DateTime.tryParse(value)?.millisecondsSinceEpoch;
+    }
+    return null;
   }
 }
 
@@ -347,17 +366,43 @@ class DiagnosticsEvent {
     );
   }
 
-  /// The specific diagnostic that changed (e.g., 'networkUnavailable')
-  String? get diagnostic => data['diagnostic'] as String?;
+  /// The specific diagnostic that changed (e.g. `isNetworkUnavailable`).
+  ///
+  /// Reads `diagnostic`, falling back to `name` for payloads that only carry it.
+  String? get diagnostic {
+    final diagnostic = data['diagnostic'];
+    if (diagnostic is String) return diagnostic;
+    final name = data['name'];
+    return name is String ? name : null;
+  }
 
-  /// The diagnostic value - can be bool for flag diagnostics
-  bool? get valueBool => data['value'] as bool?;
+  /// The diagnostic value for flag diagnostics; `null` for quality diagnostics
+  /// or an unusable payload. Reads `valueBool`, falling back to a boolean `value`.
+  bool? get valueBool {
+    final valueBool = data['valueBool'];
+    if (valueBool is bool) return valueBool;
+    final value = data['value'];
+    return value is bool ? value : null;
+  }
 
-  /// The diagnostic value as a quality enum string (e.g., 'good', 'poor', 'bad')
-  String? get valueQuality => data['valueQuality'] as String?;
+  /// The value of a quality diagnostic as a lower-case string (`good`, `poor`,
+  /// `bad`, `unknown`); `null` for flag diagnostics or an unusable payload.
+  /// Reads `valueQuality`, falling back to the lower-cased string `value`
+  /// (Android sends upper-case, iOS lower-case, in `value`).
+  String? get valueQuality {
+    final valueQuality = data['valueQuality'];
+    if (valueQuality is String) return valueQuality.toLowerCase();
+    final value = data['value'];
+    return value is String ? value.toLowerCase() : null;
+  }
 
-  /// Whether this is a flag-type diagnostic (true/false)
-  bool get isFlagDiagnostic => data['isFlagDiagnostic'] as bool? ?? true;
+  /// Whether this is a flag-type diagnostic (true/false) rather than a quality
+  /// one. Uses `isFlagDiagnostic` when present, else infers from a string `value`.
+  bool get isFlagDiagnostic {
+    final flag = data['isFlagDiagnostic'];
+    if (flag is bool) return flag;
+    return data['value'] is! String;
+  }
 
   /// Safely converts a nested map from platform channel to a typed Map.
   static Map<String, dynamic>? _toStringDynamicMap(dynamic value) {
@@ -367,11 +412,15 @@ class DiagnosticsEvent {
     return null;
   }
 
-  /// Network diagnostics snapshot
+  /// Network diagnostics snapshot (`diagnosticsSnapshot` events and
+  /// `getLatestDiagnostics`). Quality values keep each platform's casing
+  /// (Android upper-case, iOS lower-case); compare case-insensitively.
   Map<String, dynamic>? get networkDiagnostics =>
       _toStringDynamicMap(data['network']);
 
-  /// Media diagnostics snapshot
+  /// Media diagnostics snapshot. The camera-frozen flag is under both
+  /// `isCameraFrozen` (canonical) and `isCameraFreeze` (legacy alias) on both
+  /// platforms.
   Map<String, dynamic>? get mediaDiagnostics =>
       _toStringDynamicMap(data['media']);
 }

@@ -252,6 +252,9 @@ class AcsFlutterSdkPlugin : FlutterPlugin, MethodCallHandler, ActivityAware, Act
         diagnosticsEventChannel?.setStreamHandler(object : EventChannel.StreamHandler {
             override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
                 diagnosticsEventSink = events
+                // Deliver the current state right away: a stable call emits no change
+                // events, and the attach-time snapshot is dropped without a listener.
+                replayLatestDiagnostics()
             }
 
             override fun onCancel(arguments: Any?) {
@@ -2062,7 +2065,55 @@ class AcsFlutterSdkPlugin : FlutterPlugin, MethodCallHandler, ActivityAware, Act
     private fun emitDiagnosticsEvent(type: String, payload: Map<String, Any?>) {
         val data = payload.toMutableMap()
         data["type"] = type
+        // Change events also carry the keys the Dart model reads: `diagnostic` (same
+        // as `name`), `isFlagDiagnostic`, `valueBool` for flags and a lower-case
+        // `valueQuality` for quality values. `name`/`value` stay exactly as before.
+        val name = payload["name"]
+        if (type.endsWith("DiagnosticChanged") && name is String) {
+            data["diagnostic"] = name
+            val value = payload["value"]
+            if (value is String) {
+                data["isFlagDiagnostic"] = false
+                data["valueQuality"] = value.lowercase()
+            } else {
+                data["isFlagDiagnostic"] = true
+                if (value is Boolean) data["valueBool"] = value
+            }
+        }
         runOnMainThread { diagnosticsEventSink?.success(data) }
+    }
+
+    /**
+     * Replays the latest known diagnostics of the active call to a newly attached
+     * listener as one change event per known diagnostic, in the live event shape.
+     * Null flags and `UNKNOWN` qualities are skipped. No-op without an active
+     * diagnostics feature; SDK failures are logged, never thrown.
+     */
+    private fun replayLatestDiagnostics() {
+        val feature = localUserDiagnosticsFeature ?: return
+        executor.execute {
+            try {
+                val snapshot = serializeDiagnostics(feature)
+                for ((group, eventType) in listOf(
+                    "network" to "networkDiagnosticChanged",
+                    "media" to "mediaDiagnosticChanged",
+                )) {
+                    val values = snapshot[group] as? Map<*, *> ?: continue
+                    for ((key, value) in values) {
+                        // `isCameraFreeze` is a legacy alias of `isCameraFrozen`.
+                        if (key !is String || key == "isCameraFreeze") continue
+                        when {
+                            value is Boolean ->
+                                emitDiagnosticsEvent(eventType, mapOf("name" to key, "value" to value))
+                            value is String && !value.equals("unknown", ignoreCase = true) ->
+                                emitDiagnosticsEvent(eventType, mapOf("name" to key, "value" to value))
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "replayLatestDiagnostics failed", e)
+            }
+        }
     }
 
     private fun emitDiagnosticsSnapshot(diagnostics: LocalUserDiagnosticsCallFeature) {
@@ -2090,6 +2141,8 @@ class AcsFlutterSdkPlugin : FlutterPlugin, MethodCallHandler, ActivityAware, Act
                 "isNoMicrophoneDevicesAvailable" to media.isNoMicrophoneDevicesAvailable,
                 "isMicrophoneBusy" to media.isMicrophoneBusy,
                 "isCameraFrozen" to media.isCameraFrozen,
+                // Legacy alias, so both platforms carry `isCameraFrozen` and `isCameraFreeze`.
+                "isCameraFreeze" to media.isCameraFrozen,
                 "isCameraStartFailed" to media.isCameraStartFailed,
                 "isCameraStartTimedOut" to media.isCameraStartTimedOut,
                 "isMicrophoneNotFunctioning" to media.isMicrophoneNotFunctioning,
