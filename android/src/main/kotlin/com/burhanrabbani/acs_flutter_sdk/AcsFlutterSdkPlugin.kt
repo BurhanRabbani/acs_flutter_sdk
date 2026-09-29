@@ -871,6 +871,18 @@ class AcsFlutterSdkPlugin : FlutterPlugin, MethodCallHandler, ActivityAware, Act
         }
     }
 
+    /// Maps a Dart noise-suppression value (`off|auto|low|high`, case-insensitive) to
+    /// the SDK enum; null for null/unknown. Shared by join-time options and the
+    /// in-call setter so the accepted values cannot drift apart.
+    private fun parseNoiseSuppressionMode(mode: String?): NoiseSuppressionMode? =
+        when (mode?.lowercase()) {
+            "off" -> NoiseSuppressionMode.OFF
+            "auto" -> NoiseSuppressionMode.AUTO
+            "low" -> NoiseSuppressionMode.LOW
+            "high" -> NoiseSuppressionMode.HIGH
+            else -> null
+        }
+
     /// Builds [OutgoingAudioOptions] carrying noise-suppression + echo-cancellation
     /// filters for the requested [mode] (`off|auto|low|high`, case-insensitive).
     ///
@@ -879,15 +891,9 @@ class AcsFlutterSdkPlugin : FlutterPlugin, MethodCallHandler, ActivityAware, Act
     /// audio-quality nicety, never fail the join.
     private fun buildOutgoingAudioOptions(mode: String?): OutgoingAudioOptions? {
         if (mode.isNullOrBlank()) return null
-        val suppression = when (mode.lowercase()) {
-            "off" -> NoiseSuppressionMode.OFF
-            "auto" -> NoiseSuppressionMode.AUTO
-            "low" -> NoiseSuppressionMode.LOW
-            "high" -> NoiseSuppressionMode.HIGH
-            else -> {
-                Log.w(TAG, "Unknown noiseSuppressionMode '$mode' — keeping SDK defaults")
-                return null
-            }
+        val suppression = parseNoiseSuppressionMode(mode) ?: run {
+            Log.w(TAG, "Unknown noiseSuppressionMode '$mode' — keeping SDK defaults")
+            return null
         }
         // Explicit Java-bean setter calls (not Kotlin property syntax): the ACS
         // Android SDK is a compiled Java artifact and synthetic properties only
@@ -2231,15 +2237,9 @@ class AcsFlutterSdkPlugin : FlutterPlugin, MethodCallHandler, ActivityAware, Act
             result.error("NO_ACTIVE_CALL", "No active call", null)
             return
         }
-        val mode = when (call.argument<String>("mode")?.lowercase()) {
-            "off" -> NoiseSuppressionMode.OFF
-            "auto" -> NoiseSuppressionMode.AUTO
-            "low" -> NoiseSuppressionMode.LOW
-            "high" -> NoiseSuppressionMode.HIGH
-            else -> {
-                result.error("INVALID_ARGUMENT", "mode must be one of off, auto, low, high", null)
-                return
-            }
+        val mode = parseNoiseSuppressionMode(call.argument<String>("mode")) ?: run {
+            result.error("INVALID_ARGUMENT", "mode must be one of off, auto, low, high", null)
+            return
         }
         try {
             activeCall.liveOutgoingAudioFilters.setNoiseSuppressionMode(mode)

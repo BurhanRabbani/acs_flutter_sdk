@@ -1159,6 +1159,19 @@ public class AcsFlutterSdkPlugin: NSObject, FlutterPlugin, CallDelegate, RemoteP
         }
     }
 
+    /// Maps a Dart noise-suppression value (`off|auto|low|high`, case-insensitive) to
+    /// the SDK enum; nil for nil/unknown. Shared by join-time options and the in-call
+    /// setter so the accepted values cannot drift apart.
+    private func parseNoiseSuppressionMode(_ mode: String?) -> NoiseSuppressionMode? {
+        switch mode?.lowercased() {
+        case "off": return .off
+        case "auto": return .auto
+        case "low": return .low
+        case "high": return .high
+        default: return nil
+        }
+    }
+
     /// Builds `OutgoingAudioOptions` carrying noise-suppression + echo-cancellation
     /// filters for the requested mode (`off|auto|low|high`, case-insensitive).
     ///
@@ -1167,13 +1180,7 @@ public class AcsFlutterSdkPlugin: NSObject, FlutterPlugin, CallDelegate, RemoteP
     /// audio-quality nicety, never fail the join.
     private func buildOutgoingAudioOptions(mode: String?) -> OutgoingAudioOptions? {
         guard let mode = mode, !mode.isEmpty else { return nil }
-        let suppression: NoiseSuppressionMode
-        switch mode.lowercased() {
-        case "off": suppression = .off
-        case "auto": suppression = .auto
-        case "low": suppression = .low
-        case "high": suppression = .high
-        default:
+        guard let suppression = parseNoiseSuppressionMode(mode) else {
             debugLog("[ACS][Plugin] Unknown noiseSuppressionMode '\(mode)' — keeping SDK defaults")
             return nil
         }
@@ -3617,13 +3624,7 @@ extension AcsFlutterSdkPlugin {
             result(FlutterError(code: "NO_ACTIVE_CALL", message: "No active call", details: nil))
             return
         }
-        let mode: NoiseSuppressionMode
-        switch (args["mode"] as? String)?.lowercased() {
-        case "off": mode = .off
-        case "auto": mode = .auto
-        case "low": mode = .low
-        case "high": mode = .high
-        default:
+        guard let mode = parseNoiseSuppressionMode(args["mode"] as? String) else {
             result(FlutterError(code: "INVALID_ARGUMENT", message: "mode must be one of off, auto, low, high", details: nil))
             return
         }
